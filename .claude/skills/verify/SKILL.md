@@ -39,7 +39,7 @@ Point Db1 at LocalDB via a `Configurations\dbconfig.local.json` overlay (gitigno
 Env vars (`Databases__Db1__ConnectionString`) override both JSON layers.
 
 ## Gotchas
-- Every `.sql` file needs `-- Checksum: <sha256>` and `-- Tags: db1` headers or the run halts. Compute checksum the way the pre-commit hook does: hash the file BEFORE prepending the header (`Get-FileHash -Algorithm SHA256`), then prepend `-- Checksum: <hash>` as line 1.
+- Every `.sql` file needs a `-- Tags: db1` header or the run halts. No `-- Checksum:` header is needed — checksums are computed from file content at apply/plan time (`MigrationService.ComputeChecksum`).
 - Fresh empty DB: object scripts that depend on migration-created tables are deferred ("Deferring X ... will retry after migrations") and retried after migrations — a single run on an empty DB should exit 0. A script still failing at the retry pass halts with exit 1.
 - Windows PowerShell sandbox may block commands containing `(localdb)\...` literals alongside Remove-Item — build connection strings via `SqlConnectionStringBuilder` and do deletions in separate calls.
 - Query verification state via `__MigrationHistory` and `__ScriptHistory` tables in the test DB.

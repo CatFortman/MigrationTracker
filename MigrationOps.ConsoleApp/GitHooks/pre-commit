@@ -1,59 +1,14 @@
 #!/bin/sh
 
-LOG_FILE="pre-commit.log"
-
-echo "Pre-commit hook triggered" >> "$LOG_FILE"
-
-# Function to calculate SHA-256 checksum using PowerShell
-calculate_checksum() {
-    powershell -Command "Get-FileHash -Algorithm SHA256 -Path \"$1\" | Select-Object -ExpandProperty Hash"
-}
-
-# Step 1: Calculate checksum
-# Find all modified .sql files
-for file in $(git diff --cached --name-only --diff-filter=ACM | grep '.sql$'); do
-    if [ -f "$file" ]; then
-        echo "Processing $file..." >> "$LOG_FILE"
-
-        # Calculate checksum
-        checksum=$(calculate_checksum "$file")
-
-		 # Log the output of the checksum command
-        echo "Checksum output: $checksum" >> "$LOG_FILE"
-		
-        # Check if the file already contains a checksum
-        if grep -q "^-- Checksum: " "$file"; then
-            echo "Updating existing checksum to $checksum in $file" >> "$LOG_FILE"
-            # Update the existing checksum
-            sed -i "s/^-- Checksum: .*/-- Checksum: $checksum/" "$file"
-        else
-            echo "Inserting new checksum in $file" >> "$LOG_FILE"
-            # Insert the checksum at the top of the file
-            echo -e "-- Checksum: $checksum\n$(cat "$file")" > "$file"
-        fi
-
-        # Add the updated file back to the staging area
-        git add "$file"
-    fi
-done
-
-# Step 2: Check script SQL tag format and checksum format.
-# Regex patterns for checksum and tags
-checksum_pattern="^-- Checksum: [a-zA-Z0-9]+"
+# Checksums are computed from file content at apply/plan time (see
+# MigrationService.ComputeChecksum) instead of being trusted from a header
+# here, so this hook only validates that every staged .sql file declares its
+# target databases.
 tag_pattern="^--\s*Tags\s*:\s*(.+)$"
 
-# Find all SQL files in the commit
-sql_files=$(git diff --cached --name-only --diff-filter=ACMR | grep '.sql$');
+sql_files=$(git diff --cached --name-only --diff-filter=ACMR | grep '.sql$')
 
-# Check each SQL file for both checksum and tags
 for file in $sql_files; do
-    # Check for -- Checksum: <some_value>
-    if ! grep -qE "$checksum_pattern" "$file"; then
-        echo "Error: $file is missing or has an incorrect checksum format. Expected '-- Checksum: <some_value>'."
-        exit 1
-    fi
-
-    # Check for -- Tags: <word>
     if ! grep -qE "$tag_pattern" "$file"; then
         echo "Error: $file has incorrect or missing tag format. Ensure '-- Tags: <database name>' format. Example: '-- Tags: db1'."
         exit 1

@@ -55,19 +55,19 @@ the `Migrations` folder are resolved relative to the working directory, so
   runner routes the script to each tagged database and throws if no tag
   matches a configured database.
 - Scripts run as a single SqlCommand batch: no `GO` separators.
-- Never edit a migration that has already been applied. Applied-state is
-  matched on filename AND checksum, so editing the file changes its checksum
-  and the runner re-executes it against the database. Fixes go in a new
-  migration. `dry-run` reports such files as CHANGED and exits 1.
+- Never edit a migration that has already been applied. The checksum used to
+  match applied-state is computed from the file's own content at apply/plan
+  time (`MigrationService.ComputeChecksum`), so editing the file changes its
+  checksum and the runner re-executes it against the database. Fixes go in a
+  new migration. `dry-run` reports such files as CHANGED and exits 1.
 - Reusable objects (procs, views, functions, triggers) go under `Scripts/`
   using `CREATE OR ALTER`, not in `Migrations/`.
 - To create a new migration, use the `/new-migration` skill.
 
-## Pre-commit hook rewrites checksums
+## Checksums are computed, not stored
 
-The pre-commit hook prepends or updates a `-- Checksum: <SHA256>` line as the
-FIRST line of every staged .sql file (the `-- Tags:` line ends up second).
-A file you just wrote WILL differ on disk after commit. This is expected.
-Do not add checksum lines yourself, do not "fix" or revert them, and do not
-treat the post-commit diff as corruption. The hook also rejects commits of
-.sql files missing the `-- Tags:` comment.
+Nothing writes a `-- Checksum:` header anymore. `ComputeChecksum` hashes each
+script's own content (SHA-256) at apply/plan time; a leading `-- Checksum:`
+line is stripped if present (for files committed before this changed) but is
+never required or written. The pre-commit hook only rejects commits of .sql
+files missing the `-- Tags:` comment.

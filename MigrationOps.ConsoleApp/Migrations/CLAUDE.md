@@ -13,4 +13,5 @@
 - No `GO` separators (single SqlCommand batch).
 - Applied migrations are immutable; edits change the checksum and cause
   re-execution. Fixes go in a new migration.
-- The `-- Checksum:` first line belongs to the pre-commit hook. Never touch it.
+- No `-- Checksum:` header is written or required; the checksum is computed
+  from file content at apply/plan time.
