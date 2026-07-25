@@ -168,7 +168,7 @@ namespace MigrationOps.Core.MigrationFramework.Services
             try
             {
                 tags = ParseTagsFromFile(file);
-                checksum = ExtractChecksumFromScript(script);
+                checksum = ComputeChecksum(script);
 
                 if (kind == ScriptKind.DatabaseObject)
                 {
@@ -488,24 +488,7 @@ namespace MigrationOps.Core.MigrationFramework.Services
                     continue;
                 }
 
-                string currentChecksum;
-                try
-                {
-                    currentChecksum = ExtractChecksumFromScript(File.ReadAllText(file));
-                }
-                catch (InvalidOperationException)
-                {
-                    // No "-- Checksum:" line yet — a migration still being drafted, not yet
-                    // committed through the pre-commit hook. Report it distinctly rather than
-                    // failing the whole status listing for one in-progress file.
-                    statuses.Add(new MigrationFileStatus
-                    {
-                        FileName = fileName,
-                        Tags = tags,
-                        ChecksumMissing = true
-                    });
-                    continue;
-                }
+                var currentChecksum = ComputeChecksum(File.ReadAllText(file));
 
                 var isApplied = history.Any(h => h.Success && h.MigrationName == fileName && h.Checksum == currentChecksum);
                 var hasRecordedChecksum = latestSuccessChecksum.TryGetValue(fileName, out var recordedChecksum);
@@ -587,22 +570,7 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 }
 
                 var script = File.ReadAllText(file);
-
-                string currentChecksum;
-                try
-                {
-                    currentChecksum = ExtractChecksumFromScript(script);
-                }
-                catch (InvalidOperationException)
-                {
-                    statuses.Add(new MigrationFileStatus
-                    {
-                        FileName = fileName,
-                        Tags = tags,
-                        ChecksumMissing = true
-                    });
-                    continue;
-                }
+                var currentChecksum = ComputeChecksum(script);
 
                 try
                 {
@@ -712,11 +680,6 @@ namespace MigrationOps.Core.MigrationFramework.Services
             {
                 entry.Status = PlanEntryStatus.ValidationError;
                 entry.Detail = status.ValidationError;
-            }
-            else if (status.ChecksumMissing)
-            {
-                entry.Status = PlanEntryStatus.ValidationError;
-                entry.Detail = "no '-- Checksum:' header (commit the file so the pre-commit hook adds one)";
             }
             else if (status.HasDrift && kind == ScriptKind.Migration)
             {
@@ -930,19 +893,29 @@ namespace MigrationOps.Core.MigrationFramework.Services
             }
         }
 
-        public string ExtractChecksumFromScript(string script)
+        /// <summary>
+        /// Computes the script's integrity checksum from its own content instead of trusting a
+        /// header written by something else. A leading "-- Checksum:" line (left over from files
+        /// committed before this change, or a stray hand-edit) is stripped before hashing, so its
+        /// presence or removal never changes the result. Line endings are hashed as-is rather than
+        /// normalized: this reproduces the SHA-256 the pre-commit hook used to compute for a file's
+        /// first commit (verified against the real headers already checked into this repo).
+        /// </summary>
+        public static string ComputeChecksum(string script)
         {
-            var lines = script.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-
-            foreach (var line in lines)
+            var newlineIndex = script.IndexOf('\n');
+            if (newlineIndex >= 0)
             {
-                if (line.StartsWith("-- Checksum:"))
+                var firstLine = script.Substring(0, newlineIndex).TrimEnd('\r');
+                if (firstLine.StartsWith("-- Checksum:"))
                 {
-                    return line.Split(':')[1].Trim(); // Extract the checksum value after "-- Checksum: "
+                    script = script.Substring(newlineIndex + 1);
                 }
             }
 
-            throw new InvalidOperationException("No checksum found in the script.");
+            var bytes = System.Text.Encoding.UTF8.GetBytes(script);
+            var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+            return Convert.ToHexString(hash);
         }
 
         /// <summary>

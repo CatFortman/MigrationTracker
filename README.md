@@ -7,9 +7,9 @@ It combines concepts from Entity Framework migrations and SQL source control too
 ## Features
 
 - **SQL Source Control**: Organize your SQL scripts (stored procedures, views, functions, and triggers) in dedicated folders.
-- **Automatic Checksum Calculation**: Inserts unique checksums into your SQL scripts to easily manage changes.
+- **Content-based Checksums**: Each script's integrity checksum is computed from its own content at apply/plan time — no header to maintain or trust.
 - **Migration Management**: Easily handle database migrations with a structured approach, using timestamped filenames to ensure proper execution order.
-- **Git Integration**: Git hooks to automate checksum calculation and ensure valid script tags exist.
+- **Git Integration**: A Git hook ensures every script declares valid database tags.
 
 ## Installation
 
@@ -37,25 +37,9 @@ To ensure that our custom Git hooks are correctly set up on your local environme
 ```
 
 3. Verify the Hook
-Make a change in the repository, stage it, and attempt to commit. The pre-commit hook should automatically run and insert/update the checksum in your SQL files.
+Make a change in the repository, stage it, and attempt to commit. The pre-commit hook should reject the commit if any staged `.sql` file is missing a `-- Tags:` comment.
 
-### Pre-commit Hook Compatibility
-
-### Windows Environment
-The pre-commit hook script uses PowerShell's `Get-FileHash` cmdlet to calculate SHA-256 checksums. This makes the script fully compatible with Windows environments, including GitHub Desktop and Git Bash.
-
-### Other Environments (macOS/Linux)
-If you're working in a macOS or Linux environment, you may need to modify the script to use a Unix-compatible command like `sha256sum`. Here’s a basic example:
-
-```sh
-#!/bin/sh
-# Function to calculate SHA-256 checksum using sha256sum
-calculate_checksum() {
-    sha256sum "$1" | awk '{ print $1 }'
-}
-
-# Rest of the script...
-```
+Checksums are not part of the hook: `MigrationService.ComputeChecksum` computes each script's SHA-256 from its own content at apply/plan time, so there's nothing to insert, update, or trust from a header.
 
 ## Usage
 
@@ -178,7 +162,7 @@ dotnet run -- dry-run [--db <name>] [--verify]
 ```
 
 - **`apply`** runs the deploy pipeline (object scripts, then migrations, then deferred retries). `--db` limits it to one configured database.
-- **`dry-run`** previews what a deploy would do without changing anything: each file is reported as already applied, would apply, **CHANGED** (an applied migration whose file was edited — a real run would re-execute it), or a validation error (missing `-- Tags:`/`-- Checksum:`, object script without `CREATE OR ALTER`). Dry-run never halts early; it collects every problem, prints a per-database summary, and ends with `DRY-RUN SUCCEEDED`/`DRY-RUN FAILED`.
+- **`dry-run`** previews what a deploy would do without changing anything: each file is reported as already applied, would apply, **CHANGED** (an applied migration whose file was edited — a real run would re-execute it), or a validation error (missing `-- Tags:`, object script without `CREATE OR ALTER`). Dry-run never halts early; it collects every problem, prints a per-database summary, and ends with `DRY-RUN SUCCEEDED`/`DRY-RUN FAILED`.
 - **`--verify`** additionally executes the pending scripts against the target database in one transaction per database — so later scripts can rely on earlier scripts' schema — and always rolls back. It needs a reachable database but never commits anything, including history rows.
 - The exit code is the success flag: `0` only when there are no CHANGED, validation-error, or verify-failed entries, making `dry-run` suitable as a CI gate.
 

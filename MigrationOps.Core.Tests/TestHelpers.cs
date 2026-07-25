@@ -19,8 +19,8 @@ namespace MigrationOps.Core.Tests
 
 
     // Writes content to a uniquely-named temp file so tests can exercise file-based parsing
-    // (ParseTagsFromFile, ExtractChecksumFromScript, etc.) without checking in .sql fixtures
-    // that the pre-commit hook would otherwise expect a "-- Tags:"/checksum header on.
+    // (ParseTagsFromFile, ComputeChecksum, etc.) without checking in .sql fixtures that the
+    // pre-commit hook would otherwise expect a "-- Tags:" comment on.
     internal sealed class TempFile : IDisposable
     {
         public string Path { get; }

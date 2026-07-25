@@ -97,23 +97,6 @@ namespace MigrationOps.Core.Tests
         }
 
         [Fact]
-        public void ChecksumMissingMapsToValidationError()
-        {
-            var plan = new DryRunPlan();
-            var status = new MigrationFileStatus
-            {
-                FileName = "Foo.sql",
-                Tags = new List<string> { "Db1" },
-                ChecksumMissing = true
-            };
-
-            MigrationService.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", NoUnresolvedReported);
-
-            var entry = Assert.Single(plan.Entries);
-            Assert.Equal(PlanEntryStatus.ValidationError, entry.Status);
-        }
-
-        [Fact]
         public void TaglessFileIsReportedOnceAcrossMultipleDatabasesAsUnresolved()
         {
             var plan = new DryRunPlan();

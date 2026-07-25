@@ -33,5 +33,5 @@ configured database, stop and ask rather than guessing.
 
 - Never reuse or renumber an existing `NNN` for the same date; never backdate.
 - No `GO` batch separators: the runner executes each file as one SqlCommand batch.
-- Do not add a `-- Checksum:` line. The pre-commit hook prepends and maintains it as the first line; after the first commit the file on disk will change, and that diff must be left alone.
+- Do not add a `-- Checksum:` line. Checksums are computed from file content at apply/plan time; no header is written or required.
 - Never modify an existing migration file. Applied-state matches on filename AND checksum, so an edit causes the runner to re-execute the file.

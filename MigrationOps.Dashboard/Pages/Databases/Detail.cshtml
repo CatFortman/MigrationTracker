@@ -21,11 +21,7 @@
                 <tr>
                     <td class="mono">@file.FileName</td>
                     <td>
-                        @if (file.ChecksumMissing)
-                        {
-                            <span class="status-badge status-pending">Draft (no checksum)</span>
-                        }
-                        else if (file.HasDrift)
+                        @if (file.HasDrift)
                         {
                             <span class="status-badge status-drift">Drift detected</span>
                         }
@@ -42,11 +38,7 @@
                         string Shorten(string? checksum) => !string.IsNullOrEmpty(checksum) && checksum.Length > 8 ? checksum[..8] + "…" : checksum ?? "";
                     }
                     <td class="mono text-muted">
-                        @if (file.ChecksumMissing)
-                        {
-                            <span>&mdash;</span>
-                        }
-                        else if (file.HasDrift)
+                        @if (file.HasDrift)
                         {
                             <span>recorded @Shorten(file.RecordedChecksum) &rarr; now @Shorten(file.CurrentChecksum)</span>
                         }

@@ -17,5 +17,6 @@ paths:
 - Applied migrations are immutable. Applied-state is matched on filename AND
   checksum, so editing a file changes its checksum and the runner re-executes
   it. Fixes go in a new migration.
-- The `-- Checksum:` first line is owned by the pre-commit hook. Never write,
-  edit, or revert it; the post-commit diff on that line is expected.
+- No `-- Checksum:` header is written or required. The checksum is computed
+  from the file's own content at apply/plan time
+  (`MigrationService.ComputeChecksum`); do not add a checksum line yourself.
