@@ -1,23 +1,5 @@
-using MigrationOps.Core.MigrationFramework.Services;
-
 namespace MigrationOps.Core.Tests
 {
-    // MigrationService's parameterless constructor resolves Configurations/dbconfig.json
-    // relative to the current directory and calls IConfigurationBuilder.SetBasePath on it,
-    // which throws DirectoryNotFoundException if that folder doesn't exist (as it doesn't
-    // under the test project's bin output). Tests that just need *a* MigrationService
-    // instance to call an instance method on (and don't care about its configuration)
-    // should go through here instead of `new MigrationService()`.
-    internal static class TestMigrationService
-    {
-        public static MigrationService Create()
-        {
-            using var configFile = new TempFile("{}", ".json");
-            return new MigrationService(configFile.Path);
-        }
-    }
-
-
     // Writes content to a uniquely-named temp file so tests can exercise file-based parsing
     // (ParseTagsFromFile, ComputeChecksum, etc.) without checking in .sql fixtures that the
     // pre-commit hook would otherwise expect a "-- Tags:" comment on.
@@ -52,9 +34,13 @@ namespace MigrationOps.Core.Tests
             Directory.CreateDirectory(Path);
         }
 
+        // fileName may include a relative subfolder (e.g. "Views/Foo.sql"), which is created on
+        // demand - object scripts only get discovered when they sit under Functions, Views,
+        // StoredProcedures or Triggers.
         public string WriteFile(string fileName, string content)
         {
             var filePath = System.IO.Path.Combine(Path, fileName);
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(filePath)!);
             File.WriteAllText(filePath, content);
             return filePath;
         }

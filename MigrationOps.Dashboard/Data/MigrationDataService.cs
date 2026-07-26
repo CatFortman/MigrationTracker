@@ -1,3 +1,4 @@
+using MigrationOps.Core.MigrationFramework;
 using MigrationOps.Core.MigrationFramework.Services;
 using MigrationOps.Core.Models;
 
@@ -10,13 +11,13 @@ namespace MigrationOps.Dashboard.Data
         public List<MigrationFileStatus> FileStatuses { get; set; } = new();
     }
 
-    // Thin wrapper around MigrationOps.Core.MigrationService, reused as-is so the dashboard
-    // shares the exact tag/checksum/drift logic the ConsoleApp runner uses. Everything here is
+    // Thin wrapper around the MigrationOps.Core framework, reused as-is so the dashboard shares
+    // the exact tag/checksum/drift logic the ConsoleApp runner uses. Everything here is
     // read-only except RunDryRun with verify, which executes pending scripts inside a
     // transaction that is always rolled back.
     public class MigrationDataService
     {
-        private readonly MigrationService _migrationService;
+        private readonly MigrationOpsServices _services;
         private readonly string _migrationsRoot;
         private readonly string _scriptsRoot;
 
@@ -32,16 +33,16 @@ namespace MigrationOps.Dashboard.Data
             _scriptsRoot = Path.GetFullPath(configuration["ScriptsRoot"]
                 ?? Path.Combine(Path.GetDirectoryName(_migrationsRoot)!, "Scripts"));
 
-            _migrationService = new MigrationService(dbConfigPath);
+            _services = MigrationOpsServices.CreateDefault(dbConfigPath);
         }
 
-        public List<string> GetDatabaseNames() => _migrationService.GetDatabaseNames();
+        public List<string> GetDatabaseNames() => _services.Config.GetDatabaseNames();
 
         public DatabaseOverview GetDatabaseOverview(string databaseName)
         {
-            var connectionString = _migrationService.GetConnectionString(databaseName);
-            var history = _migrationService.GetMigrationHistory(connectionString);
-            var fileStatuses = _migrationService.GetMigrationFileStatuses(_migrationsRoot, databaseName, history);
+            var connectionString = _services.Config.GetConnectionString(databaseName);
+            var history = _services.HistoryStore.GetMigrationHistory(connectionString);
+            var fileStatuses = DryRunPlanner.GetMigrationFileStatuses(_migrationsRoot, databaseName, history);
 
             return new DatabaseOverview
             {
@@ -64,11 +65,11 @@ namespace MigrationOps.Dashboard.Data
                 ? new List<string> { databaseName }
                 : GetDatabaseNames();
 
-            var plan = _migrationService.BuildDryRunPlan(_scriptsRoot, _migrationsRoot, targets);
+            var plan = _services.Planner.BuildDryRunPlan(_scriptsRoot, _migrationsRoot, targets);
 
             if (verify)
             {
-                _migrationService.VerifyPlan(plan);
+                _services.Verifier.VerifyPlan(plan);
             }
 
             return plan;

@@ -1,4 +1,4 @@
-using MigrationOps.Core.MigrationFramework.Services;
+using MigrationOps.Core.MigrationFramework;
 
 class Program
 {
@@ -6,7 +6,7 @@ class Program
     {
         try
         {
-            var migrationService = new MigrationService();
+            var services = MigrationOpsServices.CreateDefault();
 
             if (args.Length == 0)
             {
@@ -14,13 +14,13 @@ class Program
                 {
                     // Existing CI/scripts invoke `dotnet run` bare and must keep deploying;
                     // only an interactive console gets the menu.
-                    return RunApply(migrationService, null);
+                    return RunApply(services, null);
                 }
 
-                return RunInteractiveMenu(migrationService);
+                return RunInteractiveMenu(services);
             }
 
-            return RunCommandLine(migrationService, args);
+            return RunCommandLine(services, args);
         }
         catch (Exception ex)
         {
@@ -29,7 +29,7 @@ class Program
         }
     }
 
-    private static int RunCommandLine(MigrationService migrationService, string[] args)
+    private static int RunCommandLine(MigrationOpsServices services, string[] args)
     {
         var command = args[0].ToLowerInvariant();
         string? database = null;
@@ -56,7 +56,7 @@ class Program
 
         if (database != null)
         {
-            var configured = migrationService.GetDatabaseNames();
+            var configured = services.Config.GetDatabaseNames();
             var canonical = configured.FirstOrDefault(n => n.Equals(database, StringComparison.OrdinalIgnoreCase));
 
             if (canonical == null)
@@ -71,9 +71,9 @@ class Program
         switch (command)
         {
             case "apply":
-                return verify ? Usage("--verify is only valid with dry-run.") : RunApply(migrationService, database);
+                return verify ? Usage("--verify is only valid with dry-run.") : RunApply(services, database);
             case "dry-run":
-                return RunDryRun(migrationService, database, verify);
+                return RunDryRun(services, database, verify);
             default:
                 return Usage($"Unknown command '{args[0]}'.");
         }
@@ -92,7 +92,7 @@ class Program
         return 1;
     }
 
-    private static int RunInteractiveMenu(MigrationService migrationService)
+    private static int RunInteractiveMenu(MigrationOpsServices services)
     {
         Console.WriteLine("MigrationOps");
         Console.WriteLine("  1) Dry-run (report only)");
@@ -105,7 +105,7 @@ class Program
             return 1;
         }
 
-        var databases = migrationService.GetDatabaseNames();
+        var databases = services.Config.GetDatabaseNames();
         Console.WriteLine("Target database: 1) All  " + string.Join("  ", databases.Select((name, i) => $"{i + 2}) {name}")));
 
         var target = PromptChoice("Select target [1]: ", max: databases.Count + 1, defaultChoice: 1);
@@ -118,9 +118,9 @@ class Program
 
         return action switch
         {
-            1 => RunDryRun(migrationService, database, verify: false),
-            2 => RunDryRun(migrationService, database, verify: true),
-            _ => RunApply(migrationService, database),
+            1 => RunDryRun(services, database, verify: false),
+            2 => RunDryRun(services, database, verify: true),
+            _ => RunApply(services, database),
         };
     }
 
@@ -155,32 +155,39 @@ class Program
         return null;
     }
 
-    private static int RunApply(MigrationService migrationService, string? database)
+    // Both folders come straight from configuration and may be unset. The null is passed through
+    // rather than guarded here, so an unconfigured run fails exactly as it always has; failing
+    // loudly on missing configuration is issue #20.
+    private static string ScriptDirectory(MigrationOpsServices services) => services.Config.ScriptDirectory!;
+
+    private static string MigrationDirectory(MigrationOpsServices services) => services.Config.MigrationDirectory!;
+
+    private static int RunApply(MigrationOpsServices services, string? database)
     {
         // Database objects (functions, views, stored procedures, triggers) are applied before
         // migrations so that migration scripts can rely on the latest object definitions.
         // Object scripts that fail because they depend on schema a pending migration creates
         // are deferred and retried after migrations; a retry failure halts the run.
-        var deferred = migrationService.ApplyDatabaseObjectScripts(migrationService.GetScriptDirectory(), database);
-        migrationService.ApplyMigrations(migrationService.GetMigrationDirectory(), database);
-        migrationService.RetryDeferredScripts(deferred, database);
+        var deferred = services.Applier.ApplyDatabaseObjectScripts(ScriptDirectory(services), database);
+        services.Applier.ApplyMigrations(MigrationDirectory(services), database);
+        services.Applier.RetryDeferredScripts(deferred, database);
         return 0;
     }
 
-    private static int RunDryRun(MigrationService migrationService, string? database, bool verify)
+    private static int RunDryRun(MigrationOpsServices services, string? database, bool verify)
     {
         var targets = database != null
             ? new List<string> { database }
-            : migrationService.GetDatabaseNames();
+            : services.Config.GetDatabaseNames();
 
-        var plan = migrationService.BuildDryRunPlan(
-            migrationService.GetScriptDirectory(),
-            migrationService.GetMigrationDirectory(),
+        var plan = services.Planner.BuildDryRunPlan(
+            ScriptDirectory(services),
+            MigrationDirectory(services),
             targets);
 
         if (verify)
         {
-            migrationService.VerifyPlan(plan);
+            services.Verifier.VerifyPlan(plan);
         }
 
         return DryRunReportRenderer.Render(plan, verify) ? 0 : 1;

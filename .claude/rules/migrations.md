@@ -19,4 +19,4 @@ paths:
   it. Fixes go in a new migration.
 - No `-- Checksum:` header is written or required. The checksum is computed
   from the file's own content at apply/plan time
-  (`MigrationService.ComputeChecksum`); do not add a checksum line yourself.
+  (`ScriptParser.ComputeChecksum`); do not add a checksum line yourself.
