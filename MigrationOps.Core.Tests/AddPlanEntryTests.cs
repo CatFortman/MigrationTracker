@@ -25,7 +25,7 @@ namespace MigrationOps.Core.Tests
                 CurrentChecksum = "abc"
             };
 
-            MigrationService.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", NoUnresolvedReported);
+            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(PlanEntryStatus.AlreadyApplied, entry.Status);
@@ -46,7 +46,7 @@ namespace MigrationOps.Core.Tests
                 CurrentChecksum = "new"
             };
 
-            MigrationService.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
+            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(PlanEntryStatus.Changed, entry.Status);
@@ -69,7 +69,7 @@ namespace MigrationOps.Core.Tests
                 CurrentChecksum = "new"
             };
 
-            MigrationService.AddPlanEntry(plan, status, ScriptKind.DatabaseObject, "Db1", filePath, NoUnresolvedReported);
+            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.DatabaseObject, "Db1", filePath, NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(PlanEntryStatus.WouldApply, entry.Status);
@@ -89,7 +89,7 @@ namespace MigrationOps.Core.Tests
                 CurrentChecksum = "new"
             };
 
-            MigrationService.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
+            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(PlanEntryStatus.WouldApply, entry.Status);
@@ -103,8 +103,8 @@ namespace MigrationOps.Core.Tests
             var status = new MigrationFileStatus { FileName = "Foo.sql", ValidationError = "no tags" };
             var reported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            MigrationService.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", reported);
-            MigrationService.AddPlanEntry(plan, status, ScriptKind.Migration, "Db2", "Foo.sql", reported);
+            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", reported);
+            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.Migration, "Db2", "Foo.sql", reported);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(PlanEntryStatus.ValidationError, entry.Status);
