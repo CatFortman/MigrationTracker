@@ -16,7 +16,7 @@
 
   <ItemGroup>
     <!-- Lets the test project exercise pure `internal` helper methods (e.g. dry-run plan
-         classification) without widening MigrationService's public API surface. -->
+         classification) without widening the public API surface. -->
     <InternalsVisibleTo Include="MigrationOps.Core.Tests" />
   </ItemGroup>
 

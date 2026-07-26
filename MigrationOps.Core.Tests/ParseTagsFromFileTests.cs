@@ -1,4 +1,4 @@
-using MigrationOps.Core.MigrationFramework.Services;
+using MigrationOps.Core.MigrationFramework.Scripts;
 
 namespace MigrationOps.Core.Tests
 {
@@ -9,7 +9,7 @@ namespace MigrationOps.Core.Tests
         {
             using var file = new TempFile("-- Tags: Db1, Db2\n-- Checksum: abc\nSELECT 1;");
 
-            var tags = MigrationService.ParseTagsFromFile(file.Path);
+            var tags = ScriptParser.ParseTagsFromFile(file.Path);
 
             Assert.Equal(new[] { "Db1", "Db2" }, tags);
         }
@@ -19,7 +19,7 @@ namespace MigrationOps.Core.Tests
         {
             using var file = new TempFile("-- Tags:   Db1 ,   Db2   \nSELECT 1;");
 
-            var tags = MigrationService.ParseTagsFromFile(file.Path);
+            var tags = ScriptParser.ParseTagsFromFile(file.Path);
 
             Assert.Equal(new[] { "Db1", "Db2" }, tags);
         }
@@ -29,7 +29,7 @@ namespace MigrationOps.Core.Tests
         {
             using var file = new TempFile("-- Tags: Db1\n-- Tags: Db2\nSELECT 1;");
 
-            var tags = MigrationService.ParseTagsFromFile(file.Path);
+            var tags = ScriptParser.ParseTagsFromFile(file.Path);
 
             Assert.Equal(new[] { "Db1" }, tags);
         }
@@ -39,7 +39,7 @@ namespace MigrationOps.Core.Tests
         {
             using var file = new TempFile("-- Checksum: abc\nSELECT 1;");
 
-            var ex = Assert.Throws<InvalidOperationException>(() => MigrationService.ParseTagsFromFile(file.Path));
+            var ex = Assert.Throws<InvalidOperationException>(() => ScriptParser.ParseTagsFromFile(file.Path));
 
             Assert.Contains(Path.GetFileName(file.Path), ex.Message);
         }
@@ -49,7 +49,7 @@ namespace MigrationOps.Core.Tests
         {
             using var file = new TempFile("");
 
-            Assert.Throws<InvalidOperationException>(() => MigrationService.ParseTagsFromFile(file.Path));
+            Assert.Throws<InvalidOperationException>(() => ScriptParser.ParseTagsFromFile(file.Path));
         }
     }
 }

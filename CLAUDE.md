@@ -7,6 +7,30 @@ filename order by the ConsoleApp. Solution has three projects:
 read-only except the dry-run verify action, which executes pending scripts in
 a rolled-back transaction).
 
+## Core layout
+
+`MigrationOps.Core/MigrationFramework/` is split by responsibility — there is no
+god class, and each piece is constructible on its own:
+
+- `Configuration/` — `IMigrationConfig` / `MigrationConfig`: dbconfig.json
+  layering (base → `.local` overlay → environment variables), connection
+  strings, folder settings, alert settings.
+- `Scripts/` — `ScriptParser` (tags, checksum, CREATE OR ALTER validation,
+  edited-migration detection) and `ScriptCatalog` (which .sql files run, in what
+  order). Pure; no database, no configuration.
+- `Data/` — `IHistoryStore` / `SqlHistoryStore`: reads and writes of
+  `__MigrationHistory` / `__ScriptHistory` outside any apply transaction.
+- `Execution/` — `IScriptExecutionGateway` / `SqlScriptExecutionGateway`: the
+  only place that opens connections and transactions. Apply runs a script and
+  its history row in one transaction; `IVerifySession` is the verify
+  counterpart, and disposing it always rolls back.
+- `Services/` — orchestration with no ADO.NET of its own: `ScriptApplier`
+  (apply pipeline), `DryRunPlanner` (plan building/classification),
+  `PlanVerifier` (`--verify`).
+- `MigrationOpsServices` — composition root; `CreateDefault(path?)` wires the
+  SQL Server implementations. Tests substitute fakes for the interfaces above
+  instead of needing a live server.
+
 ## Build and run
 
 Requires the .NET 8 SDK.
@@ -57,7 +81,7 @@ the `Migrations` folder are resolved relative to the working directory, so
 - Scripts run as a single SqlCommand batch: no `GO` separators.
 - Never edit a migration that has already been applied. The checksum used to
   match applied-state is computed from the file's own content at apply/plan
-  time (`MigrationService.ComputeChecksum`), so editing the file changes its
+  time (`ScriptParser.ComputeChecksum`), so editing the file changes its
   checksum and the runner re-executes it against the database. Fixes go in a
   new migration. `dry-run` reports such files as CHANGED and exits 1.
 - Reusable objects (procs, views, functions, triggers) go under `Scripts/`

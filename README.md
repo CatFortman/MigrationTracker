@@ -39,7 +39,7 @@ To ensure that our custom Git hooks are correctly set up on your local environme
 3. Verify the Hook
 Make a change in the repository, stage it, and attempt to commit. The pre-commit hook should reject the commit if any staged `.sql` file is missing a `-- Tags:` comment.
 
-Checksums are not part of the hook: `MigrationService.ComputeChecksum` computes each script's SHA-256 from its own content at apply/plan time, so there's nothing to insert, update, or trust from a header.
+Checksums are not part of the hook: `ScriptParser.ComputeChecksum` computes each script's SHA-256 from its own content at apply/plan time, so there's nothing to insert, update, or trust from a header.
 
 ## Usage
 
