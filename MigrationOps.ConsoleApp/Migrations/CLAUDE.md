@@ -10,7 +10,8 @@
 - Execution order is lexicographic; never backdate or renumber.
 - `-- Tags:` lists target databases; each tag must match a key under
   `Databases` in `Configurations/dbconfig.json`.
-- No `GO` separators (single SqlCommand batch).
+- `GO` separators are supported (one SqlCommand per batch, all inside the
+  file's single transaction); use them only where T-SQL needs a new batch.
 - Applied migrations are immutable; edits change the checksum and cause
   re-execution. Fixes go in a new migration.
 - No `-- Checksum:` header is written or required; the checksum is computed

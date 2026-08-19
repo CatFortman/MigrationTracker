@@ -16,14 +16,17 @@ god class, and each piece is constructible on its own:
   layering (base → `.local` overlay → environment variables), connection
   strings, folder settings, alert settings.
 - `Scripts/` — `ScriptParser` (tags, checksum, CREATE OR ALTER validation,
-  edited-migration detection) and `ScriptCatalog` (which .sql files run, in what
-  order). Pure; no database, no configuration.
+  edited-migration detection), `SqlBatchSplitter` (`GO` batch separators) and
+  `ScriptCatalog` (which .sql files run, in what order). Pure; no database, no
+  configuration.
 - `Data/` — `IHistoryStore` / `SqlHistoryStore`: reads and writes of
   `__MigrationHistory` / `__ScriptHistory` outside any apply transaction.
 - `Execution/` — `IScriptExecutionGateway` / `SqlScriptExecutionGateway`: the
   only place that opens connections and transactions. Apply runs a script and
   its history row in one transaction; `IVerifySession` is the verify
-  counterpart, and disposing it always rolls back.
+  counterpart, and disposing it always rolls back. Both paths send SQL through
+  the same `ExecuteBatches` helper, so `GO` splitting is identical for apply
+  and verify.
 - `Services/` — orchestration with no ADO.NET of its own: `ScriptApplier`
   (apply pipeline), `DryRunPlanner` (plan building/classification),
   `PlanVerifier` (`--verify`).
@@ -78,7 +81,13 @@ the `Migrations` folder are resolved relative to the working directory, so
   `Configurations/dbconfig.json` (case-insensitive, e.g. `db1`, `db2`). The
   runner routes the script to each tagged database and throws if no tag
   matches a configured database.
-- Scripts run as a single SqlCommand batch: no `GO` separators.
+- `GO` batch separators are supported. A line whose only content is `GO`
+  (optionally `GO <count>`, optionally with a trailing `--` comment) ends the
+  batch; the runner sends each batch as its own SqlCommand, in order, inside
+  the file's single transaction, so the file is still all-or-nothing. `GO`
+  inside a string, quoted identifier or comment is left alone. Use it where
+  T-SQL requires it — `CREATE PROCEDURE`/`VIEW`/`TRIGGER` must start a batch,
+  as must `SET` options and DDL that later statements reference.
 - Never edit a migration that has already been applied. The checksum used to
   match applied-state is computed from the file's own content at apply/plan
   time (`ScriptParser.ComputeChecksum`), so editing the file changes its
