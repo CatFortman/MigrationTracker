@@ -13,7 +13,11 @@ paths:
 - Every file needs a `-- Tags:` comment listing target databases. Each tag
   must match a key under `Databases` in
   `MigrationOps.ConsoleApp/Configurations/dbconfig.json` (case-insensitive).
-- No `GO` separators: each file runs as a single SqlCommand batch.
+- `GO` separators are supported: a line whose only content is `GO` (optionally
+  `GO <count>`) ends the batch. Each batch runs as its own SqlCommand, in
+  order, inside the file's single transaction. Use one where T-SQL requires a
+  new batch (`CREATE PROCEDURE`/`VIEW`/`TRIGGER`, `SET` options), not as a
+  general statement separator.
 - Applied migrations are immutable. Applied-state is matched on filename AND
   checksum, so editing a file changes its checksum and the runner re-executes
   it. Fixes go in a new migration.

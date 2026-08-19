@@ -32,7 +32,10 @@ namespace MigrationOps.Core.MigrationFramework.Execution
     /// </summary>
     public interface IVerifySession : IDisposable
     {
-        /// <summary>Executes one script in the session's transaction; throws if the SQL fails.</summary>
+        /// <summary>
+        /// Executes one script in the session's transaction, split on its GO lines exactly as an
+        /// apply would; throws if the SQL fails.
+        /// </summary>
         void Execute(string script);
 
         /// <summary>
@@ -51,8 +54,9 @@ namespace MigrationOps.Core.MigrationFramework.Execution
     {
         /// <summary>
         /// Runs a script and its history row in a single transaction: both commit, or neither
-        /// does. Returns the outcome rather than throwing, so callers decide whether a SQL
-        /// failure is fatal (migrations) or deferrable (object scripts).
+        /// does. A script split across GO lines runs batch by batch inside that one transaction,
+        /// so it is still all-or-nothing. Returns the outcome rather than throwing, so callers
+        /// decide whether a SQL failure is fatal (migrations) or deferrable (object scripts).
         /// </summary>
         ScriptExecutionResult ApplyScript(string connectionString, string script, string scriptName, string checksum, ScriptKind kind);
 

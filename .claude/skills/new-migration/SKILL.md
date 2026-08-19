@@ -32,6 +32,6 @@ configured database, stop and ask rather than guessing.
 ## Constraints
 
 - Never reuse or renumber an existing `NNN` for the same date; never backdate.
-- No `GO` batch separators: the runner executes each file as one SqlCommand batch.
+- `GO` batch separators are supported: a line whose only content is `GO` ends the batch, and the runner executes each batch in order inside the file's single transaction. Add one only where T-SQL requires a new batch (`CREATE PROCEDURE`/`VIEW`/`TRIGGER`, `SET` options), not as a general statement separator.
 - Do not add a `-- Checksum:` line. Checksums are computed from file content at apply/plan time; no header is written or required.
 - Never modify an existing migration file. Applied-state matches on filename AND checksum, so an edit causes the runner to re-execute the file.
