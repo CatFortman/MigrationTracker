@@ -9,6 +9,7 @@ It combines concepts from Entity Framework migrations and SQL source control too
 - **SQL Source Control**: Organize your SQL scripts (stored procedures, views, functions, and triggers) in dedicated folders.
 - **Content-based Checksums**: Each script's integrity checksum is computed from its own content at apply/plan time — no header to maintain or trust.
 - **Migration Management**: Easily handle database migrations with a structured approach, using timestamped filenames to ensure proper execution order.
+- **`GO` Batch Separators**: Scripts are split on `GO` lines the way SSMS does, so statements that must start their own batch work — while the whole file still applies in one transaction.
 - **Git Integration**: A Git hook ensures every script declares valid database tags.
 
 ## Installation
@@ -134,6 +135,26 @@ BEGIN
 END
 
 ```
+
+#### Batch separators (`GO`)
+
+Scripts may use `GO` batch separators, the same way SSMS and `sqlcmd` do. This is what makes statements that have to start their own batch usable in a migration — `CREATE PROCEDURE`, `CREATE VIEW` and `CREATE TRIGGER`, `SET` options, and DDL that later statements in the same file need to reference:
+
+```SQL
+-- Tags: db1
+CREATE TABLE dbo.Widget (Id INT NOT NULL PRIMARY KEY, Name NVARCHAR(100) NOT NULL);
+GO
+-- A new batch, so the CREATE VIEW is legal and can see the table above.
+CREATE VIEW dbo.vw_Widget AS SELECT Id, Name FROM dbo.Widget;
+GO
+GRANT SELECT ON dbo.vw_Widget TO [public];
+```
+
+- A line counts as a separator only when `GO` is the whole line, ignoring indentation and case. An optional repeat count (`GO 3`, which runs the batch three times) and an optional trailing `--` comment are allowed.
+- `GO` inside a string literal, a quoted or bracketed identifier, or a comment (including a multi-line one) is left alone. Anything else that merely looks like a separator — `GOTO`, `GO;`, `GO 0`, `GO SELECT 1` — stays in the batch, so SQL Server reports it instead of it being silently swallowed.
+- Every batch in a file runs in that file's **single transaction**, in order. A failure in any batch rolls the whole file back, so a multi-batch migration is still all-or-nothing, and the error names the batch that failed (SQL Server's own line numbers are relative to the batch, not the file).
+- `dry-run --verify` splits scripts exactly the same way, so a verified plan proves the real apply.
+- For object scripts, the `CREATE OR ALTER` rule applies to the **first** batch. Batches after the first may be anything — grants, extended properties, and so on.
 
 #### Build and Run
 

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Data.SqlClient;
 using MigrationOps.Core.MigrationFramework.AppConstants;
+using MigrationOps.Core.MigrationFramework.Scripts;
 using MigrationOps.Core.Models;
 
 namespace MigrationOps.Core.MigrationFramework.Execution
@@ -20,10 +21,7 @@ namespace MigrationOps.Core.MigrationFramework.Execution
 
                     try
                     {
-                        using (var command = new SqlCommand(script, connection, transaction))
-                        {
-                            command.ExecuteNonQuery();
-                        }
+                        ExecuteBatches(connection, transaction, script);
 
                         stopwatch.Stop();
                         RecordApplied(connection, transaction, scriptName, checksum, kind, (int)stopwatch.ElapsedMilliseconds);
@@ -46,6 +44,37 @@ namespace MigrationOps.Core.MigrationFramework.Execution
         public IVerifySession BeginVerifySession(string connectionString)
         {
             return new SqlVerifySession(connectionString);
+        }
+
+        /// <summary>
+        /// Sends a script to the server the way SSMS would: split on its GO lines and executed one
+        /// batch at a time, all on the caller's connection and transaction, so a multi-batch file is
+        /// still all-or-nothing. Apply and verify share this, which is what keeps verify's semantics
+        /// identical to a real apply.
+        ///
+        /// A failing batch is reported with its position, since SQL Server's own line numbers are
+        /// relative to the batch rather than the file. Single-batch scripts are left to report
+        /// exactly the error they always did.
+        /// </summary>
+        private static void ExecuteBatches(SqlConnection connection, SqlTransaction transaction, string script)
+        {
+            var batches = SqlBatchSplitter.SplitIntoBatches(script);
+
+            for (var index = 0; index < batches.Count; index++)
+            {
+                try
+                {
+                    using (var command = new SqlCommand(batches[index], connection, transaction))
+                    {
+                        command.ExecuteNonQuery();
+                    }
+                }
+                catch (Exception ex) when (batches.Count > 1)
+                {
+                    throw new InvalidOperationException(
+                        $"batch {index + 1} of {batches.Count}: {ex.Message}", ex);
+                }
+            }
         }
 
         // Written inside the caller's transaction so the history row and the script it records
@@ -94,10 +123,7 @@ namespace MigrationOps.Core.MigrationFramework.Execution
 
             public void Execute(string script)
             {
-                using (var command = new SqlCommand(script, _connection, _transaction))
-                {
-                    command.ExecuteNonQuery();
-                }
+                ExecuteBatches(_connection, _transaction, script);
             }
 
             public bool IsTransactionDoomed()

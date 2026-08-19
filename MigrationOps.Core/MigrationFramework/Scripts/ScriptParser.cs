@@ -100,10 +100,21 @@ namespace MigrationOps.Core.MigrationFramework.Scripts
         /// Database object scripts must be idempotent, since they are re-run on every deploy.
         /// This enforces that the first executable statement (after the checksum/tags header
         /// comments) is a CREATE OR ALTER, rather than a plain CREATE that fails on redeploy.
+        ///
+        /// Only the first batch is validated. A file may legitimately continue past a GO with
+        /// statements of other shapes - the grants, extended properties or SET options that follow
+        /// an object definition - and those are not what this rule is about.
         /// </summary>
         public static void EnsureCreateOrAlterStatement(string script, string scriptName)
         {
-            var lines = script.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            var batches = SqlBatchSplitter.SplitIntoBatches(script);
+
+            if (batches.Count == 0)
+            {
+                throw new InvalidOperationException($"Database object script '{scriptName}' is empty or contains no executable statement.");
+            }
+
+            var lines = batches[0].Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
 
             foreach (var line in lines)
             {
