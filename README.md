@@ -153,7 +153,7 @@ GRANT SELECT ON dbo.vw_Widget TO [public];
 - A line counts as a separator only when `GO` is the whole line, ignoring indentation and case. An optional repeat count (`GO 3`, which runs the batch three times) and an optional trailing `--` comment are allowed.
 - `GO` inside a string literal, a quoted or bracketed identifier, or a comment (including a multi-line one) is left alone. Anything else that merely looks like a separator — `GOTO`, `GO;`, `GO 0`, `GO SELECT 1` — stays in the batch, so SQL Server reports it instead of it being silently swallowed.
 - Every batch in a file runs in that file's **single transaction**, in order. A failure in any batch rolls the whole file back, so a multi-batch migration is still all-or-nothing, and the error names the batch that failed (SQL Server's own line numbers are relative to the batch, not the file).
-- `dry-run --verify` splits scripts exactly the same way, so a verified plan proves the real apply.
+- `dry-run` splits scripts exactly the same way, so a real dry-run proves the real apply.
 - For object scripts, the `CREATE OR ALTER` rule applies to the **first** batch. Batches after the first may be anything — grants, extended properties, and so on.
 
 #### Build and Run
@@ -173,19 +173,20 @@ cd MigrationOps.ConsoleApp
 dotnet run
 ```
 
-Running with no arguments opens an interactive menu (choose dry-run / dry-run + verify / apply, then a target database). When stdin is redirected — e.g. from CI — a bare `dotnet run` performs a full apply, preserving the original behavior.
+Running with no arguments opens an interactive menu (choose validate / dry-run / apply, then a target database). When stdin is redirected — e.g. from CI — a bare `dotnet run` performs a full apply, preserving the original behavior.
 
 #### CLI commands
 
 ```
-dotnet run -- apply   [--db <name>]
-dotnet run -- dry-run [--db <name>] [--verify]
+dotnet run -- apply    [--db <name>]
+dotnet run -- validate [--db <name>]
+dotnet run -- dry-run  [--db <name>]
 ```
 
 - **`apply`** runs the deploy pipeline (object scripts, then migrations, then deferred retries). `--db` limits it to one configured database.
-- **`dry-run`** previews what a deploy would do without changing anything: each file is reported as already applied, would apply, **CHANGED** (an applied migration whose file was edited — a real run would re-execute it), or a validation error (missing `-- Tags:`, object script without `CREATE OR ALTER`). Dry-run never halts early; it collects every problem, prints a per-database summary, and ends with `DRY-RUN SUCCEEDED`/`DRY-RUN FAILED`.
-- **`--verify`** additionally executes the pending scripts against the target database in one transaction per database — so later scripts can rely on earlier scripts' schema — and always rolls back. It needs a reachable database but never commits anything, including history rows.
-- The exit code is the success flag: `0` only when there are no CHANGED, validation-error, or verify-failed entries, making `dry-run` suitable as a CI gate.
+- **`validate`** previews what a deploy would do without changing anything: each file is reported as already applied, would apply, **CHANGED** (an applied migration whose file was edited — a real run would re-execute it), or a validation error (missing `-- Tags:`, object script without `CREATE OR ALTER`). Validate never halts early; it collects every problem, prints a per-database summary, and ends with `VALIDATE SUCCEEDED`/`VALIDATE FAILED`.
+- **`dry-run`** runs the same report but additionally executes the pending scripts against the target database in one transaction per database — so later scripts can rely on earlier scripts' schema — and always rolls back. It needs a reachable database but never commits anything, including history rows. It ends with `DRY-RUN SUCCEEDED`/`DRY-RUN FAILED`.
+- The exit code is the success flag: `0` only when there are no CHANGED, validation-error, or dry-run-failed entries, making both `validate` and `dry-run` suitable as CI gates.
 
 ## Dashboard
 

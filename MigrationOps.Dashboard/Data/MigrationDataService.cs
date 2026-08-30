@@ -13,8 +13,8 @@ namespace MigrationOps.Dashboard.Data
 
     // Thin wrapper around the MigrationOps.Core framework, reused as-is so the dashboard shares
     // the exact tag/checksum/drift logic the ConsoleApp runner uses. Everything here is
-    // read-only except RunDryRun with verify, which executes pending scripts inside a
-    // transaction that is always rolled back.
+    // read-only except RunDryRun with verify:true (the dashboard's "dry-run" action), which
+    // executes pending scripts inside a transaction that is always rolled back.
     public class MigrationDataService
     {
         private readonly MigrationOpsServices _services;
@@ -42,7 +42,7 @@ namespace MigrationOps.Dashboard.Data
         {
             var connectionString = _services.Config.GetConnectionString(databaseName);
             var history = _services.HistoryStore.GetMigrationHistory(connectionString);
-            var fileStatuses = DryRunPlanner.GetMigrationFileStatuses(_migrationsRoot, databaseName, history);
+            var fileStatuses = PlanBuilder.GetMigrationFileStatuses(_migrationsRoot, databaseName, history);
 
             return new DatabaseOverview
             {
@@ -57,15 +57,16 @@ namespace MigrationOps.Dashboard.Data
             return GetDatabaseNames().Select(GetDatabaseOverview).ToList();
         }
 
-        // Same plan the console `dry-run` command builds; verify mirrors `--verify` (executes
-        // pending scripts in one transaction per database, always rolled back).
-        public DryRunPlan RunDryRun(string? databaseName, bool verify)
+        // Same plan the console `validate`/`dry-run` commands build; verify:true mirrors the
+        // console `dry-run` command (executes pending scripts in one transaction per database,
+        // always rolled back), verify:false mirrors `validate` (report only).
+        public MigrationPlan RunDryRun(string? databaseName, bool verify)
         {
             var targets = databaseName != null
                 ? new List<string> { databaseName }
                 : GetDatabaseNames();
 
-            var plan = _services.Planner.BuildDryRunPlan(_scriptsRoot, _migrationsRoot, targets);
+            var plan = _services.Planner.BuildPlan(_scriptsRoot, _migrationsRoot, targets);
 
             if (verify)
             {

@@ -1,19 +1,20 @@
 @page
-@model MigrationOps.Dashboard.Pages.DryRunModel
+@model MigrationOps.Dashboard.Pages.ValidateModel
 @{
-    ViewData["Title"] = "Dry-run";
+    ViewData["Title"] = "Validate";
 
     var pendingCount = Model.Plan.Entries.Count(e => e.Status == PlanEntryStatus.WouldApply);
     var changedCount = Model.Plan.Entries.Count(e => e.Status == PlanEntryStatus.Changed);
     var errorCount = Model.Plan.Entries.Count(e => e.Status == PlanEntryStatus.ValidationError);
     var verifyFailedCount = Model.Plan.Entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyFailed);
+    var resultVerb = Model.DryRunExecuted ? "DRY-RUN" : "VALIDATE";
 }
 
 <div class="panel">
-    <h2>Dry-run</h2>
+    <h2>Validate</h2>
     <p class="text-secondary" style="font-size:0.85rem; margin:0 0 14px;">
         Read-only preview of what a real run would do &mdash; the dashboard equivalent of
-        <span class="mono">dotnet run -- dry-run</span>. Verify additionally executes the pending
+        <span class="mono">dotnet run -- validate</span>. Dry-run additionally executes the pending
         scripts in one transaction per database and always rolls back; nothing is ever committed.
     </p>
 
@@ -28,14 +29,14 @@
             </select>
             <button type="submit" class="theme-toggle"
                     title="Read-only report: classifies every script as already applied, would apply, CHANGED, or error by comparing files against the history tables. Never executes your SQL.">
-                Run dry-run
+                Run validate
             </button>
         </form>
-        <form method="post" asp-page-handler="Verify" class="filter-bar" style="margin:0;">
+        <form method="post" asp-page-handler="DryRun" class="filter-bar" style="margin:0;">
             <input type="hidden" name="database" value="@Model.Database" />
             <button type="submit" class="theme-toggle"
                     title="Same report, but also executes the pending scripts in one transaction per database and always rolls back — proves the SQL runs cleanly without committing anything. Takes real locks while it runs.">
-                Run with verify
+                Run dry-run
             </button>
         </form>
     </div>
@@ -44,11 +45,11 @@
 <div class="result-banner @(Model.Succeeded ? "good" : "bad")">
     @if (Model.Succeeded)
     {
-        <span>DRY-RUN SUCCEEDED &mdash; nothing blocking a real run@(Model.VerifyRan ? " (verify passed)" : "")</span>
+        <span>@resultVerb SUCCEEDED &mdash; nothing blocking a real run@(Model.DryRunExecuted ? " (dry-run passed)" : "")</span>
     }
     else
     {
-        <span>DRY-RUN FAILED &mdash; @changedCount changed, @errorCount error(s)@(Model.VerifyRan ? $", {verifyFailedCount} verify failure(s)" : "")</span>
+        <span>@resultVerb FAILED &mdash; @changedCount changed, @errorCount error(s)@(Model.DryRunExecuted ? $", {verifyFailedCount} dry-run failure(s)" : "")</span>
     }
 </div>
 
@@ -69,10 +70,10 @@
         <div class="tile-label">Validation errors</div>
         <div class="tile-value">@errorCount</div>
     </div>
-    @if (Model.VerifyRan)
+    @if (Model.DryRunExecuted)
     {
         <div class="tile tile-critical">
-            <div class="tile-label">Verify failures</div>
+            <div class="tile-label">Dry-run failures</div>
             <div class="tile-value">@verifyFailedCount</div>
         </div>
     }
@@ -97,9 +98,9 @@
                         <th>Kind</th>
                         <th>Status</th>
                         <th>Detail</th>
-                        @if (Model.VerifyRan)
+                        @if (Model.DryRunExecuted)
                         {
-                            <th>Verify</th>
+                            <th>Dry-run</th>
                         }
                     </tr>
                 </thead>
@@ -136,7 +137,7 @@
                                     </div>
                                 }
                             </td>
-                            @if (Model.VerifyRan)
+                            @if (Model.DryRunExecuted)
                             {
                                 <td>
                                     @if (entry.VerifyStatus == PlanEntryStatus.VerifyPassed)
@@ -150,7 +151,7 @@
                                     }
                                     else if (entry.VerifyStatus == PlanEntryStatus.NotVerified)
                                     {
-                                        <span class="text-muted">@(entry.VerifyDetail ?? "not verified")</span>
+                                        <span class="text-muted">@(entry.VerifyDetail ?? "not run")</span>
                                     }
                                     else
                                     {
@@ -169,12 +170,12 @@
                 $"{entries.Count(e => e.Status == PlanEntryStatus.Changed)} changed, " +
                 $"{entries.Count(e => e.Status == PlanEntryStatus.ValidationError)} errors";
 
-            if (Model.VerifyRan && entries.Any(e => e.VerifyStatus != null))
+            if (Model.DryRunExecuted && entries.Any(e => e.VerifyStatus != null))
             {
                 summary +=
-                    $"   (verify: {entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyPassed)} passed, " +
+                    $"   (dry-run: {entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyPassed)} passed, " +
                     $"{entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyFailed)} failed, " +
-                    $"{entries.Count(e => e.VerifyStatus == PlanEntryStatus.NotVerified)} not verified)";
+                    $"{entries.Count(e => e.VerifyStatus == PlanEntryStatus.NotVerified)} not run)";
             }
 
             <p class="text-muted" style="font-size:0.8rem; margin:12px 0 0;">@summary</p>

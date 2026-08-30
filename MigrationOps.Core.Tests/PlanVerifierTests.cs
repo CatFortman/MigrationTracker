@@ -3,7 +3,7 @@ using MigrationOps.Core.Models;
 
 namespace MigrationOps.Core.Tests
 {
-    // --verify executes a plan's pending scripts in one always-rolled-back transaction per
+    // The `dry-run` command executes a plan's pending scripts in one always-rolled-back transaction per
     // database. With the verify session behind an interface these cover the parts that used to
     // need a live server: phase ordering, defer-and-retry, doomed transactions, and what happens
     // to the entries after the first hard failure.
@@ -28,10 +28,10 @@ namespace MigrationOps.Core.Tests
             };
         }
 
-        private static DryRunPlan Plan(params PlanEntry[] entries)
+        private static MigrationPlan Plan(params PlanEntry[] entries)
         {
             var databases = entries.Select(e => e.Database).Distinct().ToList();
-            return new DryRunPlan { TargetDatabases = databases, Entries = entries.ToList() };
+            return new MigrationPlan { TargetDatabases = databases, Entries = entries.ToList() };
         }
 
         [Fact]

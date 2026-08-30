@@ -4,7 +4,7 @@ using MigrationOps.Core.Models;
 namespace MigrationOps.Core.Tests
 {
     // AddPlanEntry is the single place that turns a MigrationFileStatus diff into the status
-    // the dry-run report / --verify gate acts on. These tests exist mainly to lock in the one
+    // the validate report / dry-run gate acts on. These tests exist mainly to lock in the one
     // rule that matters most: a drifted (edited) migration must classify as Changed, while a
     // drifted database object script (proc/view/etc., meant to be re-applied) classifies as
     // WouldApply — mixing those up would either block legitimate object redeploys or let an
@@ -16,7 +16,7 @@ namespace MigrationOps.Core.Tests
         [Fact]
         public void AlreadyAppliedStatusMapsToAlreadyApplied()
         {
-            var plan = new DryRunPlan();
+            var plan = new MigrationPlan();
             var status = new MigrationFileStatus
             {
                 FileName = "Foo.sql",
@@ -25,7 +25,7 @@ namespace MigrationOps.Core.Tests
                 CurrentChecksum = "abc"
             };
 
-            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", NoUnresolvedReported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(PlanEntryStatus.AlreadyApplied, entry.Status);
@@ -36,7 +36,7 @@ namespace MigrationOps.Core.Tests
         {
             using var dir = new TempDirectory();
             var filePath = dir.WriteFile("Foo.sql", "SELECT 1;");
-            var plan = new DryRunPlan();
+            var plan = new MigrationPlan();
             var status = new MigrationFileStatus
             {
                 FileName = "Foo.sql",
@@ -46,7 +46,7 @@ namespace MigrationOps.Core.Tests
                 CurrentChecksum = "new"
             };
 
-            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(PlanEntryStatus.Changed, entry.Status);
@@ -59,7 +59,7 @@ namespace MigrationOps.Core.Tests
         {
             using var dir = new TempDirectory();
             var filePath = dir.WriteFile("Foo.sql", "CREATE OR ALTER VIEW dbo.V AS SELECT 1;");
-            var plan = new DryRunPlan();
+            var plan = new MigrationPlan();
             var status = new MigrationFileStatus
             {
                 FileName = "Foo.sql",
@@ -69,7 +69,7 @@ namespace MigrationOps.Core.Tests
                 CurrentChecksum = "new"
             };
 
-            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.DatabaseObject, "Db1", filePath, NoUnresolvedReported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.DatabaseObject, "Db1", filePath, NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(PlanEntryStatus.WouldApply, entry.Status);
@@ -81,7 +81,7 @@ namespace MigrationOps.Core.Tests
         {
             using var dir = new TempDirectory();
             var filePath = dir.WriteFile("Foo.sql", "SELECT 1;");
-            var plan = new DryRunPlan();
+            var plan = new MigrationPlan();
             var status = new MigrationFileStatus
             {
                 FileName = "Foo.sql",
@@ -89,7 +89,7 @@ namespace MigrationOps.Core.Tests
                 CurrentChecksum = "new"
             };
 
-            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(PlanEntryStatus.WouldApply, entry.Status);
@@ -99,12 +99,12 @@ namespace MigrationOps.Core.Tests
         [Fact]
         public void TaglessFileIsReportedOnceAcrossMultipleDatabasesAsUnresolved()
         {
-            var plan = new DryRunPlan();
+            var plan = new MigrationPlan();
             var status = new MigrationFileStatus { FileName = "Foo.sql", ValidationError = "no tags" };
             var reported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", reported);
-            DryRunPlanner.AddPlanEntry(plan, status, ScriptKind.Migration, "Db2", "Foo.sql", reported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", reported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db2", "Foo.sql", reported);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(PlanEntryStatus.ValidationError, entry.Status);

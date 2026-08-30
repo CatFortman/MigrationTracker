@@ -22,7 +22,7 @@ namespace MigrationOps.Core.MigrationFramework
             Config = config;
             HistoryStore = historyStore;
             Applier = new ScriptApplier(config, historyStore, gateway, alertNotifier);
-            Planner = new DryRunPlanner(config, historyStore);
+            Planner = new PlanBuilder(config, historyStore);
             Verifier = new PlanVerifier(config, gateway);
         }
 
@@ -32,7 +32,7 @@ namespace MigrationOps.Core.MigrationFramework
 
         public ScriptApplier Applier { get; }
 
-        public DryRunPlanner Planner { get; }
+        public PlanBuilder Planner { get; }
 
         public PlanVerifier Verifier { get; }
 

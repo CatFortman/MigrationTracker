@@ -4,7 +4,7 @@ SQL Server schema versioning tool. Migrations are plain .sql files executed in
 filename order by the ConsoleApp. Solution has three projects:
 `MigrationOps.ConsoleApp` (runner), `MigrationOps.Core` (framework), and
 `MigrationOps.Dashboard` (Razor Pages web UI over the same Core logic;
-read-only except the dry-run verify action, which executes pending scripts in
+read-only except the dry-run action, which executes pending scripts in
 a rolled-back transaction).
 
 ## Core layout
@@ -28,8 +28,8 @@ god class, and each piece is constructible on its own:
   the same `ExecuteBatches` helper, so `GO` splitting is identical for apply
   and verify.
 - `Services/` — orchestration with no ADO.NET of its own: `ScriptApplier`
-  (apply pipeline), `DryRunPlanner` (plan building/classification),
-  `PlanVerifier` (`--verify`).
+  (apply pipeline), `PlanBuilder` (plan building/classification),
+  `PlanVerifier` (`dry-run`).
 - `MigrationOpsServices` — composition root; `CreateDefault(path?)` wires the
   SQL Server implementations. Tests substitute fakes for the interfaces above
   instead of needing a live server.
@@ -45,12 +45,14 @@ Console app CLI:
 
 - `dotnet run -- apply [--db <name>]` — apply object scripts + migrations
   (optionally to one configured database only).
-- `dotnet run -- dry-run [--db <name>] [--verify]` — read-only preview: per
-  file, reports already applied / would apply / CHANGED (edited applied
-  migration) / validation errors, never halting early. `--verify` additionally
-  executes pending scripts in one transaction per database and always rolls
-  back. Exit code 0 only with no CHANGED, validation-error, or verify-failed
-  entries.
+- `dotnet run -- validate [--db <name>]` — read-only preview: per file,
+  reports already applied / would apply / CHANGED (edited applied migration) /
+  validation errors, never halting early. Exit code 0 only with no CHANGED or
+  validation-error entries.
+- `dotnet run -- dry-run [--db <name>]` — same report as `validate`, plus
+  executes the pending scripts in one transaction per database and always
+  rolls back. Exit code 0 only with no CHANGED, validation-error, or
+  dry-run-failed entries.
 - No args: interactive menu (choose action + target DB). If stdin is
   redirected (CI), it performs a full apply exactly like the old behavior.
 
@@ -65,10 +67,12 @@ the `Migrations` folder are resolved relative to the working directory, so
   database (`DashboardStore:ConnectionString`) for login accounts; the app
   creates its `__DashboardUsers` table but never the database itself. First
   account is bootstrapped at `/Register`, which closes once any user exists.
-  `/DryRun` is the web equivalent of the console `dry-run` command (same
-  `BuildDryRunPlan`/`VerifyPlan` Core calls); the object-scripts root defaults
-  to the `Scripts` folder next to `MigrationsRoot`, overridable via a
-  `ScriptsRoot` setting in `appsettings.json`.
+  `/Validate` is the web equivalent of the console `validate`/`dry-run`
+  commands (same `BuildPlan`/`VerifyPlan` Core calls) — its "Run
+  validate" button matches console `validate`, and its "Run dry-run" button
+  matches console `dry-run`; the object-scripts root defaults to the
+  `Scripts` folder next to `MigrationsRoot`, overridable via a `ScriptsRoot`
+  setting in `appsettings.json`.
 
 ## Migration files
 
