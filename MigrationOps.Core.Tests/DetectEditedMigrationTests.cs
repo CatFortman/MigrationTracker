@@ -3,7 +3,7 @@ using MigrationOps.Core.MigrationFramework.Scripts;
 namespace MigrationOps.Core.Tests
 {
     // Covers the guard added for #29: editing an already-applied migration must be refused by
-    // `apply`, not just flagged by dry-run. DetectEditedMigration is the pure decision behind
+    // `apply`, not just flagged by validate. DetectEditedMigration is the pure decision behind
     // that guard - given the checksum of the migration's last *successful* apply (or null if
     // it has never successfully applied) and the checksum of the file on disk, it decides
     // whether it's safe to proceed.

@@ -6,7 +6,7 @@ using MigrationOps.Core.Models;
 
 namespace MigrationOps.Core.Tests
 {
-    // Stand-ins for the four dependencies the orchestrators (ScriptApplier, DryRunPlanner,
+    // Stand-ins for the four dependencies the orchestrators (ScriptApplier, PlanBuilder,
     // PlanVerifier) take, so the apply and verify pipelines can be driven end to end without a
     // SQL Server.
 

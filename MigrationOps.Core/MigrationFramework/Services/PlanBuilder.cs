@@ -10,12 +10,12 @@ namespace MigrationOps.Core.MigrationFramework.Services
     /// file into a read-only plan. The per-file classifiers are static and take history as a
     /// parameter, so they can be exercised without a database.
     /// </summary>
-    public class DryRunPlanner
+    public class PlanBuilder
     {
         private readonly IMigrationConfig _config;
         private readonly IHistoryStore _historyStore;
 
-        public DryRunPlanner(IMigrationConfig config, IHistoryStore historyStore)
+        public PlanBuilder(IMigrationConfig config, IHistoryStore historyStore)
         {
             _config = config;
             _historyStore = historyStore;
@@ -26,9 +26,9 @@ namespace MigrationOps.Core.MigrationFramework.Services
         /// object scripts first, then migrations, classified per file. Never halts on a bad file
         /// or an unreachable database — problems become entries in the plan.
         /// </summary>
-        public DryRunPlan BuildDryRunPlan(string scriptsRootDirectory, string migrationsDirectory, IReadOnlyList<string> targetDatabases)
+        public MigrationPlan BuildPlan(string scriptsRootDirectory, string migrationsDirectory, IReadOnlyList<string> targetDatabases)
         {
-            var plan = new DryRunPlan { TargetDatabases = targetDatabases.ToList() };
+            var plan = new MigrationPlan { TargetDatabases = targetDatabases.ToList() };
 
             // Tagless files surface once per classifier call; report each only once.
             var unresolvedReported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -201,7 +201,7 @@ namespace MigrationOps.Core.MigrationFramework.Services
 
         // internal (not public) so MigrationOps.Core.Tests can exercise the classification logic
         // directly without widening the plan-building API surface.
-        internal static void AddPlanEntry(DryRunPlan plan, MigrationFileStatus status, ScriptKind kind, string database, string filePath, HashSet<string> unresolvedReported)
+        internal static void AddPlanEntry(MigrationPlan plan, MigrationFileStatus status, ScriptKind kind, string database, string filePath, HashSet<string> unresolvedReported)
         {
             var unresolved = status.ValidationError != null && status.Tags.Count == 0;
             if (unresolved && !unresolvedReported.Add(status.FileName))

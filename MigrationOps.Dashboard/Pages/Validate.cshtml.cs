@@ -5,39 +5,39 @@ using MigrationOps.Dashboard.Data;
 
 namespace MigrationOps.Dashboard.Pages
 {
-    public class DryRunModel : PageModel
+    public class ValidateModel : PageModel
     {
         private readonly MigrationDataService _dataService;
 
-        public DryRunModel(MigrationDataService dataService)
+        public ValidateModel(MigrationDataService dataService)
         {
             _dataService = dataService;
         }
 
         public List<string> DatabaseNames { get; private set; } = new();
         public string? Database { get; private set; }
-        public bool VerifyRan { get; private set; }
-        public DryRunPlan Plan { get; private set; } = new();
+        public bool DryRunExecuted { get; private set; }
+        public MigrationPlan Plan { get; private set; } = new();
 
         // Target databases plus "(unresolved)" when tagless files were found, matching the
         // console report's grouping.
         public List<string> Groups { get; private set; } = new();
 
         // Same criteria as the console's exit code: any Changed, ValidationError, or
-        // VerifyFailed entry fails the dry-run.
+        // VerifyFailed entry fails validation.
         public bool Succeeded { get; private set; }
 
         public IActionResult OnGet(string? database)
         {
-            return Run(database, verify: false);
+            return Run(database, executeAgainstDatabase: false);
         }
 
-        public IActionResult OnPostVerify(string? database)
+        public IActionResult OnPostDryRun(string? database)
         {
-            return Run(database, verify: true);
+            return Run(database, executeAgainstDatabase: true);
         }
 
-        private IActionResult Run(string? database, bool verify)
+        private IActionResult Run(string? database, bool executeAgainstDatabase)
         {
             DatabaseNames = _dataService.GetDatabaseNames();
 
@@ -52,8 +52,8 @@ namespace MigrationOps.Dashboard.Pages
                 }
             }
 
-            VerifyRan = verify;
-            Plan = _dataService.RunDryRun(Database, verify);
+            DryRunExecuted = executeAgainstDatabase;
+            Plan = _dataService.RunDryRun(Database, executeAgainstDatabase);
 
             Groups = Plan.TargetDatabases.ToList();
             if (Plan.Entries.Any(e => e.Database == "(unresolved)"))

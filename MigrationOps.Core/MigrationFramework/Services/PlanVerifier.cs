@@ -25,7 +25,7 @@ namespace MigrationOps.Core.MigrationFramework.Services
         /// back. Proves the SQL works without committing anything; history inserts are not replayed.
         /// Results land in each entry's VerifyStatus/VerifyDetail.
         /// </summary>
-        public void VerifyPlan(DryRunPlan plan)
+        public void VerifyPlan(MigrationPlan plan)
         {
             foreach (var database in plan.TargetDatabases)
             {

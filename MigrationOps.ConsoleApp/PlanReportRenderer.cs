@@ -1,16 +1,19 @@
 using MigrationOps.Core.Models;
 
 /// <summary>
-/// Renders a DryRunPlan to the console and reports overall success. The run fails (exit 1)
+/// Renders a MigrationPlan to the console and reports overall success. The run fails (exit 1)
 /// on any ValidationError, Changed, or VerifyFailed entry — Changed is deliberate: catching
-/// a forbidden edit of an applied migration before a real run re-executes it is dry-run's
+/// a forbidden edit of an applied migration before a real run re-executes it is validate's
 /// primary safety job, and a warning that exits 0 would sail through CI.
 /// </summary>
-static class DryRunReportRenderer
+static class PlanReportRenderer
 {
-    public static bool Render(DryRunPlan plan, bool verifyRan)
+    // executed = true for the `dry-run` command (pending scripts actually ran against the
+    // database, rolled back); false for `validate` (report only, no database touched).
+    public static bool Render(MigrationPlan plan, bool executed)
     {
-        Console.WriteLine($"Dry-run against {plan.TargetDatabases.Count} database(s): {string.Join(", ", plan.TargetDatabases)}");
+        var verb = executed ? "Dry-run" : "Validate";
+        Console.WriteLine($"{verb} — {plan.TargetDatabases.Count} database(s): {string.Join(", ", plan.TargetDatabases)}");
 
         var groups = plan.TargetDatabases.ToList();
         if (plan.Entries.Any(e => e.Database == "(unresolved)"))
@@ -56,12 +59,12 @@ static class DryRunReportRenderer
                 $"{entries.Count(e => e.Status == PlanEntryStatus.Changed)} changed, " +
                 $"{entries.Count(e => e.Status == PlanEntryStatus.ValidationError)} errors";
 
-            if (verifyRan && entries.Any(e => e.VerifyStatus != null))
+            if (executed && entries.Any(e => e.VerifyStatus != null))
             {
                 counts +=
-                    $"   (verify: {entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyPassed)} passed, " +
+                    $"   (dry-run: {entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyPassed)} passed, " +
                     $"{entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyFailed)} failed, " +
-                    $"{entries.Count(e => e.VerifyStatus == PlanEntryStatus.NotVerified)} not verified)";
+                    $"{entries.Count(e => e.VerifyStatus == PlanEntryStatus.NotVerified)} not run)";
             }
 
             Console.WriteLine($"  {database}: {counts}");
@@ -73,7 +76,8 @@ static class DryRunReportRenderer
                                 || e.VerifyStatus == PlanEntryStatus.VerifyFailed);
 
         Console.WriteLine();
-        Console.WriteLine(succeeded ? "DRY-RUN SUCCEEDED" : "DRY-RUN FAILED");
+        var verbUpper = verb.ToUpperInvariant();
+        Console.WriteLine(succeeded ? $"{verbUpper} SUCCEEDED" : $"{verbUpper} FAILED");
 
         return succeeded;
     }
@@ -94,9 +98,9 @@ static class DryRunReportRenderer
         {
             line += entry.VerifyStatus switch
             {
-                PlanEntryStatus.VerifyPassed => "   [verify: PASSED]",
-                PlanEntryStatus.VerifyFailed => $"   [verify: FAILED: {entry.VerifyDetail}]",
-                _ => $"   [verify: {entry.VerifyDetail}]",
+                PlanEntryStatus.VerifyPassed => "   [dry-run: PASSED]",
+                PlanEntryStatus.VerifyFailed => $"   [dry-run: FAILED: {entry.VerifyDetail}]",
+                _ => $"   [dry-run: {entry.VerifyDetail}]",
             };
         }
 

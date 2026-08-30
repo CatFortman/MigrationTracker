@@ -1,4 +1,5 @@
 using MigrationOps.Core.MigrationFramework;
+using MigrationOps.Core.Models;
 
 class Program
 {
@@ -33,7 +34,6 @@ class Program
     {
         var command = args[0].ToLowerInvariant();
         string? database = null;
-        var verify = false;
 
         for (var i = 1; i < args.Length; i++)
         {
@@ -45,9 +45,6 @@ class Program
                         return Usage("--db requires a database name.");
                     }
                     database = args[++i];
-                    break;
-                case "--verify":
-                    verify = true;
                     break;
                 default:
                     return Usage($"Unknown option '{args[i]}'.");
@@ -71,9 +68,11 @@ class Program
         switch (command)
         {
             case "apply":
-                return verify ? Usage("--verify is only valid with dry-run.") : RunApply(services, database);
+                return RunApply(services, database);
+            case "validate":
+                return RunValidate(services, database);
             case "dry-run":
-                return RunDryRun(services, database, verify);
+                return RunDryRun(services, database);
             default:
                 return Usage($"Unknown command '{args[0]}'.");
         }
@@ -84,8 +83,9 @@ class Program
         Console.Error.WriteLine(error);
         Console.Error.WriteLine();
         Console.Error.WriteLine("Usage:");
-        Console.Error.WriteLine("  dotnet run -- apply   [--db <name>]");
-        Console.Error.WriteLine("  dotnet run -- dry-run [--db <name>] [--verify]");
+        Console.Error.WriteLine("  dotnet run -- apply    [--db <name>]");
+        Console.Error.WriteLine("  dotnet run -- validate [--db <name>]");
+        Console.Error.WriteLine("  dotnet run -- dry-run  [--db <name>]");
         Console.Error.WriteLine();
         Console.Error.WriteLine("Running with no arguments opens an interactive menu (or performs a full");
         Console.Error.WriteLine("apply when stdin is redirected, e.g. from CI).");
@@ -95,8 +95,8 @@ class Program
     private static int RunInteractiveMenu(MigrationOpsServices services)
     {
         Console.WriteLine("MigrationOps");
-        Console.WriteLine("  1) Dry-run (report only)");
-        Console.WriteLine("  2) Dry-run + verify (executes pending scripts, then rolls back)");
+        Console.WriteLine("  1) Validate (report only)");
+        Console.WriteLine("  2) Dry-run (executes pending scripts, then rolls back)");
         Console.WriteLine("  3) Apply");
 
         var action = PromptChoice("Select action [1]: ", max: 3, defaultChoice: 1);
@@ -118,8 +118,8 @@ class Program
 
         return action switch
         {
-            1 => RunDryRun(services, database, verify: false),
-            2 => RunDryRun(services, database, verify: true),
+            1 => RunValidate(services, database),
+            2 => RunDryRun(services, database),
             _ => RunApply(services, database),
         };
     }
@@ -174,22 +174,28 @@ class Program
         return 0;
     }
 
-    private static int RunDryRun(MigrationOpsServices services, string? database, bool verify)
+    private static int RunValidate(MigrationOpsServices services, string? database)
+    {
+        var plan = BuildPlan(services, database);
+        return PlanReportRenderer.Render(plan, executed: false) ? 0 : 1;
+    }
+
+    private static int RunDryRun(MigrationOpsServices services, string? database)
+    {
+        var plan = BuildPlan(services, database);
+        services.Verifier.VerifyPlan(plan);
+        return PlanReportRenderer.Render(plan, executed: true) ? 0 : 1;
+    }
+
+    private static MigrationPlan BuildPlan(MigrationOpsServices services, string? database)
     {
         var targets = database != null
             ? new List<string> { database }
             : services.Config.GetDatabaseNames();
 
-        var plan = services.Planner.BuildDryRunPlan(
+        return services.Planner.BuildPlan(
             ScriptDirectory(services),
             MigrationDirectory(services),
             targets);
-
-        if (verify)
-        {
-            services.Verifier.VerifyPlan(plan);
-        }
-
-        return DryRunReportRenderer.Render(plan, verify) ? 0 : 1;
     }
 }
