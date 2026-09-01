@@ -183,7 +183,7 @@ class Program
     private static int RunDryRun(MigrationOpsServices services, string? database)
     {
         var plan = BuildPlan(services, database);
-        services.Verifier.VerifyPlan(plan);
+        services.DryRunner.RunDryRun(plan);
         return PlanReportRenderer.Render(plan, executed: true) ? 0 : 1;
     }
 

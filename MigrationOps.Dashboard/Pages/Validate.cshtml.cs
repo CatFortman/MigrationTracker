@@ -14,9 +14,18 @@ namespace MigrationOps.Dashboard.Pages
             _dataService = dataService;
         }
 
+        private enum RunMode { Validate, DryRun, Apply }
+
         public List<string> DatabaseNames { get; private set; } = new();
         public string? Database { get; private set; }
         public bool DryRunExecuted { get; private set; }
+        public bool ApplyExecuted { get; private set; }
+
+        // Set only when OnPostApply's real apply threw (a genuine SQL failure, same as the
+        // console app) — Plan is still populated (rebuilt via a plain validate) so the page can
+        // show what did and didn't make it through before the failure.
+        public string? ApplyError { get; private set; }
+
         public MigrationPlan Plan { get; private set; } = new();
 
         // Target databases plus "(unresolved)" when tagless files were found, matching the
@@ -24,20 +33,25 @@ namespace MigrationOps.Dashboard.Pages
         public List<string> Groups { get; private set; } = new();
 
         // Same criteria as the console's exit code: any Changed, ValidationError, or
-        // VerifyFailed entry fails validation.
+        // VerifyFailed entry fails validation; an apply that threw also fails.
         public bool Succeeded { get; private set; }
 
         public IActionResult OnGet(string? database)
         {
-            return Run(database, executeAgainstDatabase: false);
+            return Run(database, RunMode.Validate);
         }
 
         public IActionResult OnPostDryRun(string? database)
         {
-            return Run(database, executeAgainstDatabase: true);
+            return Run(database, RunMode.DryRun);
         }
 
-        private IActionResult Run(string? database, bool executeAgainstDatabase)
+        public IActionResult OnPostApply(string? database)
+        {
+            return Run(database, RunMode.Apply);
+        }
+
+        private IActionResult Run(string? database, RunMode mode)
         {
             DatabaseNames = _dataService.GetDatabaseNames();
 
@@ -52,8 +66,25 @@ namespace MigrationOps.Dashboard.Pages
                 }
             }
 
-            DryRunExecuted = executeAgainstDatabase;
-            Plan = _dataService.RunDryRun(Database, executeAgainstDatabase);
+            DryRunExecuted = mode == RunMode.DryRun;
+            ApplyExecuted = mode == RunMode.Apply;
+
+            if (mode == RunMode.Apply)
+            {
+                try
+                {
+                    Plan = _dataService.RunApply(Database);
+                }
+                catch (Exception ex)
+                {
+                    ApplyError = ex.Message;
+                    Plan = _dataService.RunDryRun(Database, verify: false);
+                }
+            }
+            else
+            {
+                Plan = _dataService.RunDryRun(Database, verify: mode == RunMode.DryRun);
+            }
 
             Groups = Plan.TargetDatabases.ToList();
             if (Plan.Entries.Any(e => e.Database == "(unresolved)"))
@@ -61,9 +92,10 @@ namespace MigrationOps.Dashboard.Pages
                 Groups.Add("(unresolved)");
             }
 
-            Succeeded = !Plan.Entries.Any(e => e.Status == PlanEntryStatus.ValidationError
-                                            || e.Status == PlanEntryStatus.Changed
-                                            || e.VerifyStatus == PlanEntryStatus.VerifyFailed);
+            Succeeded = ApplyError == null
+                && !Plan.Entries.Any(e => e.Status == PlanEntryStatus.ValidationError
+                                       || e.Status == PlanEntryStatus.Changed
+                                       || e.VerifyStatus == PlanEntryStatus.VerifyFailed);
 
             return Page();
         }
