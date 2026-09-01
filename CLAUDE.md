@@ -30,7 +30,7 @@ god class, and each piece is constructible on its own:
   and verify.
 - `Services/` — orchestration with no ADO.NET of its own: `ScriptApplier`
   (apply pipeline), `PlanBuilder` (plan building/classification),
-  `PlanVerifier` (`dry-run`).
+  `PlanDryRunner` (`dry-run`).
 - `MigrationOpsServices` — composition root; `CreateDefault(path?)` wires the
   SQL Server implementations. Tests substitute fakes for the interfaces above
   instead of needing a live server.
@@ -69,7 +69,7 @@ the `Migrations` folder are resolved relative to the working directory, so
   creates its `__DashboardUsers` table but never the database itself. First
   account is bootstrapped at `/Register`, which closes once any user exists.
   `/Validate` is the web equivalent of the console `validate`/`dry-run`/`apply`
-  commands (same `BuildPlan`/`VerifyPlan`/`ScriptApplier` Core calls) — its
+  commands (same `BuildPlan`/`RunDryRun`/`ScriptApplier` Core calls) — its
   "Run validate" button matches console `validate`, its "Run dry-run" button
   matches console `dry-run`, and its "Run Migrations" button matches console
   `apply` (the one action on this page that writes real, permanent changes);

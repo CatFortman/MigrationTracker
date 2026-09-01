@@ -71,7 +71,7 @@ namespace MigrationOps.Dashboard.Data
 
             if (verify)
             {
-                _services.Verifier.VerifyPlan(plan);
+                _services.DryRunner.RunDryRun(plan);
             }
 
             return plan;
