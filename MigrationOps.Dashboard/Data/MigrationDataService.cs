@@ -12,9 +12,10 @@ namespace MigrationOps.Dashboard.Data
     }
 
     // Thin wrapper around the MigrationOps.Core framework, reused as-is so the dashboard shares
-    // the exact tag/checksum/drift logic the ConsoleApp runner uses. Everything here is
-    // read-only except RunDryRun with verify:true (the dashboard's "dry-run" action), which
-    // executes pending scripts inside a transaction that is always rolled back.
+    // the exact tag/checksum/drift logic the ConsoleApp runner uses. RunDryRun with verify:true
+    // (the dashboard's "dry-run" action) executes pending scripts inside a transaction that is
+    // always rolled back; RunApply (the "Run Migrations" action) is the one non-read-only path —
+    // it writes real, permanent changes, identical to the console `apply` command.
     public class MigrationDataService
     {
         private readonly MigrationOpsServices _services;
@@ -74,6 +75,24 @@ namespace MigrationOps.Dashboard.Data
             }
 
             return plan;
+        }
+
+        // Mirrors the console `apply` command exactly (same ScriptApplier pipeline, same
+        // object-scripts-before-migrations-then-retry-deferred order). Writes real, permanent
+        // changes to the target database(s); the applier throws on a real SQL failure, same as
+        // the console app, so callers should expect and handle that. Returns the plan rebuilt
+        // after the apply so the caller can show the resulting state.
+        public MigrationPlan RunApply(string? databaseName)
+        {
+            var targets = databaseName != null
+                ? new List<string> { databaseName }
+                : GetDatabaseNames();
+
+            var deferred = _services.Applier.ApplyDatabaseObjectScripts(_scriptsRoot, databaseName);
+            _services.Applier.ApplyMigrations(_migrationsRoot, databaseName);
+            _services.Applier.RetryDeferredScripts(deferred, databaseName);
+
+            return _services.Planner.BuildPlan(_scriptsRoot, _migrationsRoot, targets);
         }
     }
 }

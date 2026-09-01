@@ -7,7 +7,8 @@
     var changedCount = Model.Plan.Entries.Count(e => e.Status == PlanEntryStatus.Changed);
     var errorCount = Model.Plan.Entries.Count(e => e.Status == PlanEntryStatus.ValidationError);
     var verifyFailedCount = Model.Plan.Entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyFailed);
-    var resultVerb = Model.DryRunExecuted ? "DRY-RUN" : "VALIDATE";
+    var resultVerb = Model.ApplyExecuted ? "APPLY" : (Model.DryRunExecuted ? "DRY-RUN" : "VALIDATE");
+    var databaseLabel = Model.Database ?? "ALL configured databases";
 }
 
 <div class="panel">
@@ -15,7 +16,8 @@
     <p class="text-secondary" style="font-size:0.85rem; margin:0 0 14px;">
         Read-only preview of what a real run would do &mdash; the dashboard equivalent of
         <span class="mono">dotnet run -- validate</span>. Dry-run additionally executes the pending
-        scripts in one transaction per database and always rolls back; nothing is ever committed.
+        scripts in one transaction per database and always rolls back; nothing is committed. Run
+        Migrations is the one action here that writes real, permanent changes.
     </p>
 
     <div class="filter-bar">
@@ -39,13 +41,25 @@
                 Run dry-run
             </button>
         </form>
+        <form method="post" asp-page-handler="Apply" class="filter-bar" style="margin:0;"
+              onsubmit="return confirm('This will actually apply pending object scripts and migrations to @databaseLabel. This writes real, permanent changes and cannot be undone. Continue?');">
+            <input type="hidden" name="database" value="@Model.Database" />
+            <button type="submit" class="theme-toggle" style="background:#b91c1c; color:#fff; border-color:#b91c1c;"
+                    title="Actually applies pending object scripts and migrations to the target database(s) — the same effect as `dotnet run -- apply`. This is not a preview.">
+                Run Migrations
+            </button>
+        </form>
     </div>
 </div>
 
-<div class="result-banner @(Model.Succeeded ? "good" : "bad")">
-    @if (Model.Succeeded)
+<div class="result-banner @((Model.Succeeded) ? "good" : "bad")">
+    @if (Model.ApplyExecuted && Model.ApplyError != null)
     {
-        <span>@resultVerb SUCCEEDED &mdash; nothing blocking a real run@(Model.DryRunExecuted ? " (dry-run passed)" : "")</span>
+        <span>APPLY FAILED &mdash; @Model.ApplyError</span>
+    }
+    else if (Model.Succeeded)
+    {
+        <span>@resultVerb SUCCEEDED &mdash; @(Model.ApplyExecuted ? "pending scripts applied" : $"nothing blocking a real run{(Model.DryRunExecuted ? " (dry-run passed)" : "")}")</span>
     }
     else
     {

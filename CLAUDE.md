@@ -5,7 +5,8 @@ filename order by the ConsoleApp. Solution has three projects:
 `MigrationOps.ConsoleApp` (runner), `MigrationOps.Core` (framework), and
 `MigrationOps.Dashboard` (Razor Pages web UI over the same Core logic;
 read-only except the dry-run action, which executes pending scripts in
-a rolled-back transaction).
+a rolled-back transaction, and the Run Migrations action, which actually
+applies them).
 
 ## Core layout
 
@@ -67,12 +68,14 @@ the `Migrations` folder are resolved relative to the working directory, so
   database (`DashboardStore:ConnectionString`) for login accounts; the app
   creates its `__DashboardUsers` table but never the database itself. First
   account is bootstrapped at `/Register`, which closes once any user exists.
-  `/Validate` is the web equivalent of the console `validate`/`dry-run`
-  commands (same `BuildPlan`/`VerifyPlan` Core calls) — its "Run
-  validate" button matches console `validate`, and its "Run dry-run" button
-  matches console `dry-run`; the object-scripts root defaults to the
-  `Scripts` folder next to `MigrationsRoot`, overridable via a `ScriptsRoot`
-  setting in `appsettings.json`.
+  `/Validate` is the web equivalent of the console `validate`/`dry-run`/`apply`
+  commands (same `BuildPlan`/`VerifyPlan`/`ScriptApplier` Core calls) — its
+  "Run validate" button matches console `validate`, its "Run dry-run" button
+  matches console `dry-run`, and its "Run Migrations" button matches console
+  `apply` (the one action on this page that writes real, permanent changes);
+  the object-scripts root defaults to the `Scripts` folder next to
+  `MigrationsRoot`, overridable via a `ScriptsRoot` setting in
+  `appsettings.json`.
 
 ## Migration files
 
