@@ -124,7 +124,7 @@ namespace MigrationOps.Core.Tests
             return ScriptExecutionResult.Success(3);
         }
 
-        public IVerifySession BeginVerifySession(string connectionString)
+        public IValidateSession BeginValidateSession(string connectionString)
         {
             if (BeginSessionThrows != null)
             {
@@ -139,7 +139,7 @@ namespace MigrationOps.Core.Tests
         }
     }
 
-    internal sealed class FakeVerifySession : IVerifySession
+    internal sealed class FakeVerifySession : IValidateSession
     {
         public FakeVerifySession(string connectionString)
         {

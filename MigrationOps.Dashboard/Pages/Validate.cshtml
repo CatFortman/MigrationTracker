@@ -3,10 +3,10 @@
 @{
     ViewData["Title"] = "Validate";
 
-    var pendingCount = Model.Plan.Entries.Count(e => e.Status == PlanEntryStatus.WouldApply);
-    var changedCount = Model.Plan.Entries.Count(e => e.Status == PlanEntryStatus.Changed);
-    var errorCount = Model.Plan.Entries.Count(e => e.Status == PlanEntryStatus.ValidationError);
-    var verifyFailedCount = Model.Plan.Entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyFailed);
+    var pendingCount = Model.Plan.Entries.Count(e => e.Status == EntryStatus.WouldApply);
+    var changedCount = Model.Plan.Entries.Count(e => e.Status == EntryStatus.Changed);
+    var errorCount = Model.Plan.Entries.Count(e => e.Status == EntryStatus.ValidationError);
+    var verifyFailedCount = Model.Plan.Entries.Count(e => e.DryRunStatus == EntryStatus.DryRunFailed);
     var resultVerb = Model.ApplyExecuted ? "APPLY" : (Model.DryRunExecuted ? "DRY-RUN" : "VALIDATE");
     var databaseLabel = Model.Database ?? "ALL configured databases";
 }
@@ -127,13 +127,13 @@
                             <td>
                                 @switch (entry.Status)
                                 {
-                                    case PlanEntryStatus.AlreadyApplied:
+                                    case EntryStatus.AlreadyApplied:
                                         <span class="status-badge status-success">Already applied</span>
                                         break;
-                                    case PlanEntryStatus.WouldApply:
+                                    case EntryStatus.WouldApply:
                                         <span class="status-badge status-pending">Would apply</span>
                                         break;
-                                    case PlanEntryStatus.Changed:
+                                    case EntryStatus.Changed:
                                         <span class="status-badge status-drift">CHANGED</span>
                                         break;
                                     default:
@@ -143,7 +143,7 @@
                             </td>
                             <td class="text-muted">
                                 @entry.Detail
-                                @if (entry.Status == PlanEntryStatus.Changed && entry.Kind == ScriptKind.Migration)
+                                @if (entry.Status == EntryStatus.Changed && entry.Kind == ScriptKind.Migration)
                                 {
                                     <div class="warning-note">
                                         A real run would re-execute this migration. Applied migrations must
@@ -154,18 +154,18 @@
                             @if (Model.DryRunExecuted)
                             {
                                 <td>
-                                    @if (entry.VerifyStatus == PlanEntryStatus.VerifyPassed)
+                                    @if (entry.DryRunStatus == EntryStatus.DryRunPassed)
                                     {
                                         <span class="status-badge status-success">Passed</span>
                                     }
-                                    else if (entry.VerifyStatus == PlanEntryStatus.VerifyFailed)
+                                    else if (entry.DryRunStatus == EntryStatus.DryRunFailed)
                                     {
                                         <span class="status-badge status-failed">Failed</span>
-                                        <div class="error-text">@entry.VerifyDetail</div>
+                                        <div class="error-text">@entry.DryRunDetail</div>
                                     }
-                                    else if (entry.VerifyStatus == PlanEntryStatus.NotVerified)
+                                    else if (entry.DryRunStatus == EntryStatus.NotRun)
                                     {
-                                        <span class="text-muted">@(entry.VerifyDetail ?? "not run")</span>
+                                        <span class="text-muted">@(entry.DryRunDetail ?? "not run")</span>
                                     }
                                     else
                                     {
@@ -179,17 +179,17 @@
             </table>
 
             var summary =
-                $"{entries.Count(e => e.Status == PlanEntryStatus.AlreadyApplied)} applied, " +
-                $"{entries.Count(e => e.Status == PlanEntryStatus.WouldApply)} pending, " +
-                $"{entries.Count(e => e.Status == PlanEntryStatus.Changed)} changed, " +
-                $"{entries.Count(e => e.Status == PlanEntryStatus.ValidationError)} errors";
+                $"{entries.Count(e => e.Status == EntryStatus.AlreadyApplied)} applied, " +
+                $"{entries.Count(e => e.Status == EntryStatus.WouldApply)} pending, " +
+                $"{entries.Count(e => e.Status == EntryStatus.Changed)} changed, " +
+                $"{entries.Count(e => e.Status == EntryStatus.ValidationError)} errors";
 
-            if (Model.DryRunExecuted && entries.Any(e => e.VerifyStatus != null))
+            if (Model.DryRunExecuted && entries.Any(e => e.DryRunStatus != null))
             {
                 summary +=
-                    $"   (dry-run: {entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyPassed)} passed, " +
-                    $"{entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyFailed)} failed, " +
-                    $"{entries.Count(e => e.VerifyStatus == PlanEntryStatus.NotVerified)} not run)";
+                    $"   (dry-run: {entries.Count(e => e.DryRunStatus == EntryStatus.DryRunPassed)} passed, " +
+                    $"{entries.Count(e => e.DryRunStatus == EntryStatus.DryRunFailed)} failed, " +
+                    $"{entries.Count(e => e.DryRunStatus == EntryStatus.NotRun)} not run)";
             }
 
             <p class="text-muted" style="font-size:0.8rem; margin:12px 0 0;">@summary</p>

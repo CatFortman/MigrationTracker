@@ -46,11 +46,11 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 }
                 catch (Exception ex)
                 {
-                    plan.Entries.Add(new PlanEntry
+                    plan.Entries.Add(new Entry
                     {
                         FileName = "(connection)",
                         Database = database,
-                        Status = PlanEntryStatus.ValidationError,
+                        Status = EntryStatus.ValidationError,
                         Detail = $"cannot read history: {ex.Message}"
                     });
                     continue;
@@ -209,7 +209,7 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 return;
             }
 
-            var entry = new PlanEntry
+            var entry = new Entry
             {
                 FileName = status.FileName,
                 FilePath = filePath,
@@ -221,27 +221,27 @@ namespace MigrationOps.Core.MigrationFramework.Services
 
             if (status.ValidationError != null)
             {
-                entry.Status = PlanEntryStatus.ValidationError;
+                entry.Status = EntryStatus.ValidationError;
                 entry.Detail = status.ValidationError;
             }
             else if (status.HasDrift && kind == ScriptKind.Migration)
             {
-                entry.Status = PlanEntryStatus.Changed;
+                entry.Status = EntryStatus.Changed;
                 entry.Detail = $"recorded {ScriptParser.ShortChecksum(status.RecordedChecksum)} but file is {ScriptParser.ShortChecksum(status.CurrentChecksum)}";
             }
             else if (status.IsApplied)
             {
-                entry.Status = PlanEntryStatus.AlreadyApplied;
+                entry.Status = EntryStatus.AlreadyApplied;
             }
             else
             {
                 // Includes drifted object scripts: editing a proc/view so it re-applies is the
                 // designed workflow, unlike editing an applied migration.
-                entry.Status = PlanEntryStatus.WouldApply;
+                entry.Status = EntryStatus.WouldApply;
                 entry.Detail = status.HasDrift ? "would apply (updated)" : "would apply (new)";
             }
 
-            if (entry.Status == PlanEntryStatus.WouldApply || entry.Status == PlanEntryStatus.Changed)
+            if (entry.Status == EntryStatus.WouldApply || entry.Status == EntryStatus.Changed)
             {
                 entry.ScriptText = File.ReadAllText(filePath);
             }

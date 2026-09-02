@@ -30,7 +30,7 @@ namespace MigrationOps.Core.MigrationFramework.Execution
     /// One open connection with an uncommitted transaction, used by verify to execute a database's
     /// pending scripts and then throw the work away. Disposing always rolls back.
     /// </summary>
-    public interface IVerifySession : IDisposable
+    public interface IValidateSession : IDisposable
     {
         /// <summary>
         /// Executes one script in the session's transaction, split on its GO lines exactly as an
@@ -60,6 +60,6 @@ namespace MigrationOps.Core.MigrationFramework.Execution
         /// </summary>
         ScriptExecutionResult ApplyScript(string connectionString, string script, string scriptName, string checksum, ScriptKind kind);
 
-        IVerifySession BeginVerifySession(string connectionString);
+        IValidateSession BeginValidateSession(string connectionString);
     }
 }

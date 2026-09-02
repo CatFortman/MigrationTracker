@@ -33,7 +33,7 @@ namespace MigrationOps.Dashboard.Pages
         public List<string> Groups { get; private set; } = new();
 
         // Same criteria as the console's exit code: any Changed, ValidationError, or
-        // VerifyFailed entry fails validation; an apply that threw also fails.
+        // DryRunFailed entry fails validation; an apply that threw also fails.
         public bool Succeeded { get; private set; }
 
         public IActionResult OnGet(string? database)
@@ -78,12 +78,16 @@ namespace MigrationOps.Dashboard.Pages
                 catch (Exception ex)
                 {
                     ApplyError = ex.Message;
-                    Plan = _dataService.RunDryRun(Database, verify: false);
+                    Plan = _dataService.VerifyMigrationPlan(Database);
                 }
+            }
+            else if (mode == RunMode.DryRun)
+            {
+                Plan = _dataService.DryRunMigrationPlan(Database);
             }
             else
             {
-                Plan = _dataService.RunDryRun(Database, verify: mode == RunMode.DryRun);
+                Plan = _dataService.VerifyMigrationPlan(Database);
             }
 
             Groups = Plan.TargetDatabases.ToList();
@@ -93,14 +97,14 @@ namespace MigrationOps.Dashboard.Pages
             }
 
             Succeeded = ApplyError == null
-                && !Plan.Entries.Any(e => e.Status == PlanEntryStatus.ValidationError
-                                       || e.Status == PlanEntryStatus.Changed
-                                       || e.VerifyStatus == PlanEntryStatus.VerifyFailed);
+                && !Plan.Entries.Any(e => e.Status == EntryStatus.ValidationError
+                                       || e.Status == EntryStatus.Changed
+                                       || e.DryRunStatus == EntryStatus.DryRunFailed);
 
             return Page();
         }
 
-        public List<PlanEntry> EntriesFor(string group)
+        public List<Entry> EntriesFor(string group)
         {
             return Plan.Entries
                 .Where(e => e.Database.Equals(group, StringComparison.OrdinalIgnoreCase))
