@@ -23,7 +23,7 @@ namespace MigrationOps.Core.MigrationFramework
             HistoryStore = historyStore;
             Applier = new ScriptApplier(config, historyStore, gateway, alertNotifier);
             Planner = new PlanBuilder(config, historyStore);
-            Verifier = new PlanVerifier(config, gateway);
+            DryRunner = new PlanDryRunner(config, gateway);
         }
 
         public IMigrationConfig Config { get; }
@@ -34,7 +34,7 @@ namespace MigrationOps.Core.MigrationFramework
 
         public PlanBuilder Planner { get; }
 
-        public PlanVerifier Verifier { get; }
+        public PlanDryRunner DryRunner { get; }
 
         /// <summary>
         /// The production wiring against SQL Server. Pass a dbconfig.json path when the working

@@ -7,12 +7,12 @@ namespace MigrationOps.Core.Tests
     // database. With the verify session behind an interface these cover the parts that used to
     // need a live server: phase ordering, defer-and-retry, doomed transactions, and what happens
     // to the entries after the first hard failure.
-    public class PlanVerifierTests
+    public class PlanDryRunnerTests
     {
         private readonly TestConfig _config = TestConfig.WithDatabases("Db1", "Db2");
         private readonly FakeExecutionGateway _gateway = new();
 
-        private PlanVerifier CreateVerifier() => new(_config, _gateway);
+        private PlanDryRunner CreateDryRunner() => new(_config, _gateway);
 
         private static PlanEntry Entry(string fileName, ScriptKind kind, string database = "Db1",
             PlanEntryStatus status = PlanEntryStatus.WouldApply, string? scriptText = null)
@@ -39,7 +39,7 @@ namespace MigrationOps.Core.Tests
         {
             var entry = Entry("20260101-001-Foo.sql", ScriptKind.Migration);
 
-            CreateVerifier().VerifyPlan(Plan(entry));
+            CreateDryRunner().RunDryRun(Plan(entry));
 
             Assert.Equal(PlanEntryStatus.VerifyPassed, entry.VerifyStatus);
             Assert.True(_gateway.LastSession!.Disposed);
@@ -51,7 +51,7 @@ namespace MigrationOps.Core.Tests
             var applied = Entry("Applied.sql", ScriptKind.Migration, status: PlanEntryStatus.AlreadyApplied);
             var invalid = Entry("Invalid.sql", ScriptKind.Migration, status: PlanEntryStatus.ValidationError);
 
-            CreateVerifier().VerifyPlan(Plan(applied, invalid));
+            CreateDryRunner().RunDryRun(Plan(applied, invalid));
 
             Assert.Null(applied.VerifyStatus);
             Assert.Null(invalid.VerifyStatus);
@@ -63,7 +63,7 @@ namespace MigrationOps.Core.Tests
         {
             var changed = Entry("20260101-001-Foo.sql", ScriptKind.Migration, status: PlanEntryStatus.Changed);
 
-            CreateVerifier().VerifyPlan(Plan(changed));
+            CreateDryRunner().RunDryRun(Plan(changed));
 
             Assert.Equal(PlanEntryStatus.Changed, changed.Status);
             Assert.Equal(PlanEntryStatus.VerifyPassed, changed.VerifyStatus);
@@ -76,7 +76,7 @@ namespace MigrationOps.Core.Tests
             var view = Entry("V.sql", ScriptKind.DatabaseObject);
 
             // Plan order deliberately puts the migration first; the verifier must still phase it.
-            CreateVerifier().VerifyPlan(Plan(migration, view));
+            CreateDryRunner().RunDryRun(Plan(migration, view));
 
             Assert.Equal(new[] { "-- V.sql", "-- 20260101-001-Foo.sql" }, _gateway.LastSession!.Executed);
         }
@@ -88,7 +88,7 @@ namespace MigrationOps.Core.Tests
             var migration = Entry("20260101-001-Foo.sql", ScriptKind.Migration);
             _gateway.ConfigureSession = session => session.FailuresRemaining["-- V.sql"] = 1;
 
-            CreateVerifier().VerifyPlan(Plan(view, migration));
+            CreateDryRunner().RunDryRun(Plan(view, migration));
 
             Assert.Equal(PlanEntryStatus.VerifyPassed, view.VerifyStatus);
             Assert.Equal(PlanEntryStatus.VerifyPassed, migration.VerifyStatus);
@@ -106,7 +106,7 @@ namespace MigrationOps.Core.Tests
                 session.Doomed = true;
             };
 
-            CreateVerifier().VerifyPlan(Plan(view, migration));
+            CreateDryRunner().RunDryRun(Plan(view, migration));
 
             Assert.Equal(PlanEntryStatus.VerifyFailed, view.VerifyStatus);
             Assert.Contains("verify failed", view.VerifyDetail);
@@ -121,7 +121,7 @@ namespace MigrationOps.Core.Tests
             var second = Entry("20260101-002-Second.sql", ScriptKind.Migration);
             _gateway.ConfigureSession = session => session.FailuresRemaining["-- 20260101-001-First.sql"] = 1;
 
-            CreateVerifier().VerifyPlan(Plan(first, second));
+            CreateDryRunner().RunDryRun(Plan(first, second));
 
             Assert.Equal(PlanEntryStatus.VerifyFailed, first.VerifyStatus);
             Assert.Equal(PlanEntryStatus.NotVerified, second.VerifyStatus);
@@ -139,7 +139,7 @@ namespace MigrationOps.Core.Tests
                 session.FailuresRemaining["-- 20260101-001-Foo.sql"] = 1;
             };
 
-            CreateVerifier().VerifyPlan(Plan(view, migration));
+            CreateDryRunner().RunDryRun(Plan(view, migration));
 
             Assert.Equal(PlanEntryStatus.VerifyFailed, migration.VerifyStatus);
             Assert.Equal(PlanEntryStatus.NotVerified, view.VerifyStatus);
@@ -152,7 +152,7 @@ namespace MigrationOps.Core.Tests
             var second = Entry("20260101-002-Second.sql", ScriptKind.Migration);
             _gateway.BeginSessionThrows = new InvalidOperationException("login failed");
 
-            CreateVerifier().VerifyPlan(Plan(first, second));
+            CreateDryRunner().RunDryRun(Plan(first, second));
 
             Assert.Equal(PlanEntryStatus.VerifyFailed, first.VerifyStatus);
             Assert.Equal("login failed", first.VerifyDetail);
@@ -165,7 +165,7 @@ namespace MigrationOps.Core.Tests
             var db1 = Entry("20260101-001-Foo.sql", ScriptKind.Migration, "Db1");
             var db2 = Entry("20260101-001-Foo.sql", ScriptKind.Migration, "Db2");
 
-            CreateVerifier().VerifyPlan(Plan(db1, db2));
+            CreateDryRunner().RunDryRun(Plan(db1, db2));
 
             Assert.Equal(new[] { "conn:Db1", "conn:Db2" }, _gateway.Sessions.Select(s => s.ConnectionString));
         }
@@ -179,7 +179,7 @@ namespace MigrationOps.Core.Tests
             entry.FilePath = filePath;
             entry.ScriptText = null;
 
-            CreateVerifier().VerifyPlan(Plan(entry));
+            CreateDryRunner().RunDryRun(Plan(entry));
 
             Assert.Equal("-- Tags: Db1\nSELECT 1;", Assert.Single(_gateway.LastSession!.Executed));
         }

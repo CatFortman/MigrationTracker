@@ -8,12 +8,12 @@ namespace MigrationOps.Core.MigrationFramework.Services
     /// Executes a dry-run plan's pending entries against the real databases and throws the work
     /// away, recording per-entry verify results. Nothing here commits.
     /// </summary>
-    public class PlanVerifier
+    public class PlanDryRunner
     {
         private readonly IMigrationConfig _config;
         private readonly IScriptExecutionGateway _gateway;
 
-        public PlanVerifier(IMigrationConfig config, IScriptExecutionGateway gateway)
+        public PlanDryRunner(IMigrationConfig config, IScriptExecutionGateway gateway)
         {
             _config = config;
             _gateway = gateway;
@@ -25,7 +25,7 @@ namespace MigrationOps.Core.MigrationFramework.Services
         /// back. Proves the SQL works without committing anything; history inserts are not replayed.
         /// Results land in each entry's VerifyStatus/VerifyDetail.
         /// </summary>
-        public void VerifyPlan(MigrationPlan plan)
+        public void RunDryRun(MigrationPlan plan)
         {
             foreach (var database in plan.TargetDatabases)
             {
