@@ -41,7 +41,7 @@ namespace MigrationOps.Core.MigrationFramework.Execution
             }
         }
 
-        public IVerifySession BeginVerifySession(string connectionString)
+        public IValidateSession BeginValidateSession(string connectionString)
         {
             return new SqlVerifySession(connectionString);
         }
@@ -100,7 +100,7 @@ namespace MigrationOps.Core.MigrationFramework.Execution
             }
         }
 
-        private sealed class SqlVerifySession : IVerifySession
+        private sealed class SqlVerifySession : IValidateSession
         {
             private readonly SqlConnection _connection;
             private readonly SqlTransaction _transaction;

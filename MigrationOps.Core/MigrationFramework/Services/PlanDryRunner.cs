@@ -23,7 +23,7 @@ namespace MigrationOps.Core.MigrationFramework.Services
         /// Executes each database's pending entries (WouldApply + Changed) inside one transaction
         /// per database — so later scripts can see earlier scripts' schema — and always rolls it
         /// back. Proves the SQL works without committing anything; history inserts are not replayed.
-        /// Results land in each entry's VerifyStatus/VerifyDetail.
+        /// Results land in each entry's DryRunStatus/DryRunDetail.
         /// </summary>
         public void RunDryRun(MigrationPlan plan)
         {
@@ -31,7 +31,7 @@ namespace MigrationOps.Core.MigrationFramework.Services
             {
                 var pending = plan.Entries
                     .Where(e => e.Database.Equals(database, StringComparison.OrdinalIgnoreCase)
-                             && (e.Status == PlanEntryStatus.WouldApply || e.Status == PlanEntryStatus.Changed))
+                             && (e.Status == EntryStatus.WouldApply || e.Status == EntryStatus.Changed))
                     .ToList();
 
                 if (pending.Count == 0)
@@ -41,30 +41,30 @@ namespace MigrationOps.Core.MigrationFramework.Services
 
                 try
                 {
-                    VerifyDatabase(_config.GetConnectionString(database), pending);
+                    ValidatePlan(_config.GetConnectionString(database), pending);
                 }
                 catch (Exception ex)
                 {
                     // Couldn't even get a connection/transaction: first pending entry carries
                     // the error, the rest are unverified.
-                    pending[0].VerifyStatus = PlanEntryStatus.VerifyFailed;
-                    pending[0].VerifyDetail = ex.Message;
+                    pending[0].DryRunStatus = EntryStatus.DryRunFailed;
+                    pending[0].DryRunDetail = ex.Message;
                     foreach (var entry in pending.Skip(1))
                     {
-                        entry.VerifyStatus = PlanEntryStatus.NotVerified;
+                        entry.DryRunStatus = EntryStatus.NotRun;
                     }
                 }
             }
         }
 
-        private void VerifyDatabase(string connectionString, List<PlanEntry> pending)
+        private void ValidatePlan(string connectionString, List<Entry> pending)
         {
             // Disposing the session rolls the transaction back, whatever happened inside it.
-            using (var session = _gateway.BeginVerifySession(connectionString))
+            using (var session = _gateway.BeginValidateSession(connectionString))
             {
                 var objectEntries = pending.Where(e => e.Kind == ScriptKind.DatabaseObject).ToList();
                 var migrationEntries = pending.Where(e => e.Kind == ScriptKind.Migration).ToList();
-                var deferred = new List<PlanEntry>();
+                var deferred = new List<Entry>();
                 var stopped = false;
 
                 // Phase 1: object scripts, mirroring the real run's defer-on-failure.
@@ -72,21 +72,21 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 {
                     if (stopped)
                     {
-                        MarkNotVerified(entry);
+                        MarkNotRun(entry);
                         continue;
                     }
 
                     try
                     {
-                        ExecuteVerify(session, entry);
-                        entry.VerifyStatus = PlanEntryStatus.VerifyPassed;
+                        ExecuteEntry(session, entry);
+                        entry.DryRunStatus = EntryStatus.DryRunPassed;
                     }
                     catch (Exception ex)
                     {
                         if (session.IsTransactionDoomed())
                         {
-                            entry.VerifyStatus = PlanEntryStatus.VerifyFailed;
-                            entry.VerifyDetail = ex.Message;
+                            entry.DryRunStatus = EntryStatus.DryRunFailed;
+                            entry.DryRunDetail = ex.Message;
                             stopped = true;
                         }
                         else
@@ -102,19 +102,19 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 {
                     if (stopped)
                     {
-                        MarkNotVerified(entry);
+                        MarkNotRun(entry);
                         continue;
                     }
 
                     try
                     {
-                        ExecuteVerify(session, entry);
-                        entry.VerifyStatus = PlanEntryStatus.VerifyPassed;
+                        ExecuteEntry(session, entry);
+                        entry.DryRunStatus = EntryStatus.DryRunPassed;
                     }
                     catch (Exception ex)
                     {
-                        entry.VerifyStatus = PlanEntryStatus.VerifyFailed;
-                        entry.VerifyDetail = ex.Message;
+                        entry.DryRunStatus = EntryStatus.DryRunFailed;
+                        entry.DryRunDetail = ex.Message;
                         stopped = true;
                     }
                 }
@@ -124,32 +124,32 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 {
                     if (stopped)
                     {
-                        MarkNotVerified(entry);
+                        MarkNotRun(entry);
                         continue;
                     }
 
                     try
                     {
-                        ExecuteVerify(session, entry);
-                        entry.VerifyStatus = PlanEntryStatus.VerifyPassed;
+                        ExecuteEntry(session, entry);
+                        entry.DryRunStatus = EntryStatus.DryRunPassed;
                     }
                     catch (Exception ex)
                     {
-                        entry.VerifyStatus = PlanEntryStatus.VerifyFailed;
-                        entry.VerifyDetail = ex.Message;
+                        entry.DryRunStatus = EntryStatus.DryRunFailed;
+                        entry.DryRunDetail = ex.Message;
                         stopped = true;
                     }
                 }
             }
         }
 
-        private static void MarkNotVerified(PlanEntry entry)
+        private static void MarkNotRun(Entry entry)
         {
-            entry.VerifyStatus = PlanEntryStatus.NotVerified;
-            entry.VerifyDetail = "not verified - earlier failure";
+            entry.DryRunStatus = EntryStatus.NotRun;
+            entry.DryRunDetail = "not run - earlier failure";
         }
 
-        private static void ExecuteVerify(IVerifySession session, PlanEntry entry)
+        private static void ExecuteEntry(IValidateSession session, Entry entry)
         {
             session.Execute(entry.ScriptText ?? File.ReadAllText(entry.FilePath));
         }

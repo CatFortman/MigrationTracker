@@ -12,8 +12,8 @@ namespace MigrationOps.Dashboard.Data
     }
 
     // Thin wrapper around the MigrationOps.Core framework, reused as-is so the dashboard shares
-    // the exact tag/checksum/drift logic the ConsoleApp runner uses. RunDryRun with verify:true
-    // (the dashboard's "dry-run" action) executes pending scripts inside a transaction that is
+    // the exact tag/checksum/drift logic the ConsoleApp runner uses. DryRunMigrationPlan (the
+    // dashboard's "dry-run" action) executes pending scripts inside a transaction that is
     // always rolled back; RunApply (the "Run Migrations" action) is the one non-read-only path —
     // it writes real, permanent changes, identical to the console `apply` command.
     public class MigrationDataService
@@ -58,22 +58,23 @@ namespace MigrationOps.Dashboard.Data
             return GetDatabaseNames().Select(GetDatabaseOverview).ToList();
         }
 
-        // Same plan the console `validate`/`dry-run` commands build; verify:true mirrors the
-        // console `dry-run` command (executes pending scripts in one transaction per database,
-        // always rolled back), verify:false mirrors `validate` (report only).
-        public MigrationPlan RunDryRun(string? databaseName, bool verify)
+        // Read-only report: diffs files against history and classifies each one. Mirrors the
+        // console `validate` command; nothing beyond reading history touches the database.
+        public MigrationPlan VerifyMigrationPlan(string? databaseName)
         {
             var targets = databaseName != null
                 ? new List<string> { databaseName }
                 : GetDatabaseNames();
 
-            var plan = _services.Planner.BuildPlan(_scriptsRoot, _migrationsRoot, targets);
+            return _services.Planner.BuildPlan(_scriptsRoot, _migrationsRoot, targets);
+        }
 
-            if (verify)
-            {
-                _services.DryRunner.RunDryRun(plan);
-            }
-
+        // Same plan as VerifyMigrationPlan, plus executes each pending entry in one transaction
+        // per database and always rolls back. Mirrors the console `dry-run` command.
+        public MigrationPlan DryRunMigrationPlan(string? databaseName)
+        {
+            var plan = VerifyMigrationPlan(databaseName);
+            _services.DryRunner.RunDryRun(plan);
             return plan;
         }
 
