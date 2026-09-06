@@ -91,7 +91,7 @@ namespace MigrationOps.Dashboard.Data
 
             var deferred = _services.Applier.ApplyDatabaseObjectScripts(_scriptsRoot, databaseName);
             _services.Applier.ApplyMigrations(_migrationsRoot, databaseName);
-            _services.Applier.RetryDeferredScripts(deferred, databaseName);
+            _services.Applier.RetryDeferredScripts(deferred);
 
             return _services.Planner.BuildPlan(_scriptsRoot, _migrationsRoot, targets);
         }

@@ -1,4 +1,3 @@
--- Tags: db1
 CREATE TABLE AuditLogs (
     LogId INT PRIMARY KEY IDENTITY(1,1),
     Action NVARCHAR(255) NOT NULL,
