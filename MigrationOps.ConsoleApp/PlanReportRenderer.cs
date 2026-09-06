@@ -2,7 +2,7 @@ using MigrationOps.Core.Models;
 
 /// <summary>
 /// Renders a MigrationPlan to the console and reports overall success. The run fails (exit 1)
-/// on any ValidationError, Changed, or VerifyFailed entry — Changed is deliberate: catching
+/// on any ValidationError, Changed, or DryRunFailed entry — Changed is deliberate: catching
 /// a forbidden edit of an applied migration before a real run re-executes it is validate's
 /// primary safety job, and a warning that exits 0 would sail through CI.
 /// </summary>
@@ -54,26 +54,26 @@ static class PlanReportRenderer
                 .ToList();
 
             var counts =
-                $"{entries.Count(e => e.Status == PlanEntryStatus.AlreadyApplied)} applied, " +
-                $"{entries.Count(e => e.Status == PlanEntryStatus.WouldApply)} pending, " +
-                $"{entries.Count(e => e.Status == PlanEntryStatus.Changed)} changed, " +
-                $"{entries.Count(e => e.Status == PlanEntryStatus.ValidationError)} errors";
+                $"{entries.Count(e => e.Status == EntryStatus.AlreadyApplied)} applied, " +
+                $"{entries.Count(e => e.Status == EntryStatus.WouldApply)} pending, " +
+                $"{entries.Count(e => e.Status == EntryStatus.Changed)} changed, " +
+                $"{entries.Count(e => e.Status == EntryStatus.ValidationError)} errors";
 
-            if (executed && entries.Any(e => e.VerifyStatus != null))
+            if (executed && entries.Any(e => e.DryRunStatus != null))
             {
                 counts +=
-                    $"   (dry-run: {entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyPassed)} passed, " +
-                    $"{entries.Count(e => e.VerifyStatus == PlanEntryStatus.VerifyFailed)} failed, " +
-                    $"{entries.Count(e => e.VerifyStatus == PlanEntryStatus.NotVerified)} not run)";
+                    $"   (dry-run: {entries.Count(e => e.DryRunStatus == EntryStatus.DryRunPassed)} passed, " +
+                    $"{entries.Count(e => e.DryRunStatus == EntryStatus.DryRunFailed)} failed, " +
+                    $"{entries.Count(e => e.DryRunStatus == EntryStatus.NotRun)} not run)";
             }
 
             Console.WriteLine($"  {database}: {counts}");
         }
 
         var succeeded =
-            !plan.Entries.Any(e => e.Status == PlanEntryStatus.ValidationError
-                                || e.Status == PlanEntryStatus.Changed
-                                || e.VerifyStatus == PlanEntryStatus.VerifyFailed);
+            !plan.Entries.Any(e => e.Status == EntryStatus.ValidationError
+                                || e.Status == EntryStatus.Changed
+                                || e.DryRunStatus == EntryStatus.DryRunFailed);
 
         Console.WriteLine();
         var verbUpper = verb.ToUpperInvariant();
@@ -82,31 +82,31 @@ static class PlanReportRenderer
         return succeeded;
     }
 
-    private static void RenderEntry(PlanEntry entry, int nameWidth)
+    private static void RenderEntry(Entry entry, int nameWidth)
     {
         var (marker, description) = entry.Status switch
         {
-            PlanEntryStatus.AlreadyApplied => ("=", "already applied"),
-            PlanEntryStatus.WouldApply => ("+", entry.Detail ?? "would apply"),
-            PlanEntryStatus.Changed => ("~", $"CHANGED: {entry.Detail}"),
+            EntryStatus.AlreadyApplied => ("=", "already applied"),
+            EntryStatus.WouldApply => ("+", entry.Detail ?? "would apply"),
+            EntryStatus.Changed => ("~", $"CHANGED: {entry.Detail}"),
             _ => ("x", $"ERROR: {entry.Detail}"),
         };
 
         var line = $"  {marker} {entry.FileName.PadRight(nameWidth)}{description}";
 
-        if (entry.VerifyStatus != null)
+        if (entry.DryRunStatus != null)
         {
-            line += entry.VerifyStatus switch
+            line += entry.DryRunStatus switch
             {
-                PlanEntryStatus.VerifyPassed => "   [dry-run: PASSED]",
-                PlanEntryStatus.VerifyFailed => $"   [dry-run: FAILED: {entry.VerifyDetail}]",
-                _ => $"   [dry-run: {entry.VerifyDetail}]",
+                EntryStatus.DryRunPassed => "   [dry-run: PASSED]",
+                EntryStatus.DryRunFailed => $"   [dry-run: FAILED: {entry.DryRunDetail}]",
+                _ => $"   [dry-run: {entry.DryRunDetail}]",
             };
         }
 
         Console.WriteLine(line);
 
-        if (entry.Status == PlanEntryStatus.Changed && entry.Kind == ScriptKind.Migration)
+        if (entry.Status == EntryStatus.Changed && entry.Kind == ScriptKind.Migration)
         {
             Console.WriteLine("      WARNING: a real run would RE-EXECUTE this migration. Applied migrations must");
             Console.WriteLine("      never be edited; put the fix in a new migration.");

@@ -28,7 +28,7 @@ namespace MigrationOps.Core.Tests
             PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
-            Assert.Equal(PlanEntryStatus.AlreadyApplied, entry.Status);
+            Assert.Equal(EntryStatus.AlreadyApplied, entry.Status);
         }
 
         [Fact]
@@ -49,7 +49,7 @@ namespace MigrationOps.Core.Tests
             PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
-            Assert.Equal(PlanEntryStatus.Changed, entry.Status);
+            Assert.Equal(EntryStatus.Changed, entry.Status);
             Assert.Contains("recorded", entry.Detail);
             Assert.NotNull(entry.ScriptText);
         }
@@ -72,7 +72,7 @@ namespace MigrationOps.Core.Tests
             PlanBuilder.AddPlanEntry(plan, status, ScriptKind.DatabaseObject, "Db1", filePath, NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
-            Assert.Equal(PlanEntryStatus.WouldApply, entry.Status);
+            Assert.Equal(EntryStatus.WouldApply, entry.Status);
             Assert.Contains("updated", entry.Detail);
         }
 
@@ -92,7 +92,7 @@ namespace MigrationOps.Core.Tests
             PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
 
             var entry = Assert.Single(plan.Entries);
-            Assert.Equal(PlanEntryStatus.WouldApply, entry.Status);
+            Assert.Equal(EntryStatus.WouldApply, entry.Status);
             Assert.Contains("new", entry.Detail);
         }
 
@@ -107,7 +107,7 @@ namespace MigrationOps.Core.Tests
             PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db2", "Foo.sql", reported);
 
             var entry = Assert.Single(plan.Entries);
-            Assert.Equal(PlanEntryStatus.ValidationError, entry.Status);
+            Assert.Equal(EntryStatus.ValidationError, entry.Status);
             Assert.Equal("(unresolved)", entry.Database);
         }
     }
