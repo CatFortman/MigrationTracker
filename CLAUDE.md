@@ -16,10 +16,10 @@ god class, and each piece is constructible on its own:
 - `Configuration/` — `IMigrationConfig` / `MigrationConfig`: dbconfig.json
   layering (base → `.local` overlay → environment variables), connection
   strings, folder settings, alert settings.
-- `Scripts/` — `ScriptParser` (tags, checksum, CREATE OR ALTER validation,
+- `Scripts/` — `ScriptParser` (checksum, CREATE OR ALTER validation,
   edited-migration detection), `SqlBatchSplitter` (`GO` batch separators) and
-  `ScriptCatalog` (which .sql files run, in what order). Pure; no database, no
-  configuration.
+  `ScriptCatalog` (which .sql files run, in what order, and which
+  per-database subfolders exist). Pure; no database, no configuration.
 - `Data/` — `IHistoryStore` / `SqlHistoryStore`: reads and writes of
   `__MigrationHistory` / `__ScriptHistory` outside any apply transaction.
 - `Execution/` — `IScriptExecutionGateway` / `SqlScriptExecutionGateway`: the
@@ -79,15 +79,18 @@ the `Migrations` folder are resolved relative to the working directory, so
 
 ## Migration files
 
-- Live in `MigrationOps.ConsoleApp/Migrations/`, named
-  `yyyyMMdd-NNN-Description.sql` (e.g. `20240807-001-CreateUserTable.sql`).
-  `NNN` is a zero-padded per-day sequence starting at 001; `Description` is
-  PascalCase, no spaces.
-- Every .sql file needs a `-- Tags:` comment. Tags are DATABASE TARGETS, not
-  labels: each tag must match a key under `Databases` in
-  `Configurations/dbconfig.json` (case-insensitive, e.g. `db1`, `db2`). The
-  runner routes the script to each tagged database and throws if no tag
-  matches a configured database.
+- Live in `MigrationOps.ConsoleApp/Migrations/<Database>/`, named
+  `yyyyMMdd-NNN-Description.sql` (e.g.
+  `Migrations/Db1/20240807-001-CreateUserTable.sql`). `NNN` is a zero-padded
+  per-day sequence starting at 001, scoped to that database's own subfolder;
+  `Description` is PascalCase, no spaces.
+- A file's database is its subfolder, not a comment: `<Database>` must exactly
+  match a key under `Databases` in `Configurations/dbconfig.json` (case
+  matters — folder lookups are case-sensitive on Linux even though this repo
+  runs on Windows today, e.g. `Db1`, `Db2`). A subfolder under `Migrations/`
+  or `Scripts/` that doesn't match any configured database is reported as a
+  validation error by `validate`/`dry-run` and makes `apply` throw and halt
+  the run, rather than silently never being discovered.
 - `GO` batch separators are supported. A line whose only content is `GO`
   (optionally `GO <count>`, optionally with a trailing `--` comment) ends the
   batch; the runner sends each batch as its own SqlCommand, in order, inside
@@ -100,8 +103,9 @@ the `Migrations` folder are resolved relative to the working directory, so
   time (`ScriptParser.ComputeChecksum`), so editing the file changes its
   checksum and the runner re-executes it against the database. Fixes go in a
   new migration. `dry-run` reports such files as CHANGED and exits 1.
-- Reusable objects (procs, views, functions, triggers) go under `Scripts/`
-  using `CREATE OR ALTER`, not in `Migrations/`.
+- Reusable objects (procs, views, functions, triggers) go under
+  `Scripts/<Database>/Functions|Views|StoredProcedures|Triggers/` using
+  `CREATE OR ALTER`, not in `Migrations/`.
 - To create a new migration, use the `/new-migration` skill.
 
 ## Checksums are computed, not stored
@@ -109,5 +113,6 @@ the `Migrations` folder are resolved relative to the working directory, so
 Nothing writes a `-- Checksum:` header anymore. `ComputeChecksum` hashes each
 script's own content (SHA-256) at apply/plan time; a leading `-- Checksum:`
 line is stripped if present (for files committed before this changed) but is
-never required or written. The pre-commit hook only rejects commits of .sql
-files missing the `-- Tags:` comment.
+never required or written. There is no pre-commit hook anymore — its only job
+was enforcing the `-- Tags:` comment, which the folder-per-database layout
+replaced.

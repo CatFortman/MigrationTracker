@@ -10,8 +10,8 @@ namespace MigrationOps.Core.Tests
         public void MarksFileAppliedWhenChecksumMatchesSuccessfulHistory()
         {
             using var dir = new TempDirectory();
-            const string script = "-- Tags: Db1\nSELECT 1;";
-            dir.WriteFile("20260101-001-Foo.sql", script);
+            const string script = "SELECT 1;";
+            dir.WriteFile("Db1/20260101-001-Foo.sql", script);
 
             var history = new List<MigrationHistoryRecord>
             {
@@ -28,8 +28,8 @@ namespace MigrationOps.Core.Tests
         public void MarksFileAsDriftedWhenFileChecksumDiffersFromLastSuccessfulApply()
         {
             using var dir = new TempDirectory();
-            const string script = "-- Tags: Db1\nSELECT 1;";
-            dir.WriteFile("20260101-001-Foo.sql", script);
+            const string script = "SELECT 1;";
+            dir.WriteFile("Db1/20260101-001-Foo.sql", script);
             var currentChecksum = ScriptParser.ComputeChecksum(script);
 
             var history = new List<MigrationHistoryRecord>
@@ -49,7 +49,7 @@ namespace MigrationOps.Core.Tests
         public void MarksFileAsPendingWhenNotYetInHistory()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "-- Tags: Db1\nSELECT 1;");
+            dir.WriteFile("Db1/20260101-001-Foo.sql", "SELECT 1;");
 
             var status = Assert.Single(PlanBuilder.GetMigrationFileStatuses(dir.Path, "Db1", new List<MigrationHistoryRecord>()));
 
@@ -61,8 +61,8 @@ namespace MigrationOps.Core.Tests
         public void IgnoresFailedHistoryRowsSoRetryIsNotMistakenForDrift()
         {
             using var dir = new TempDirectory();
-            const string script = "-- Tags: Db1\nSELECT 1;";
-            dir.WriteFile("20260101-001-Foo.sql", script);
+            const string script = "SELECT 1;";
+            dir.WriteFile("Db1/20260101-001-Foo.sql", script);
 
             var history = new List<MigrationHistoryRecord>
             {
@@ -79,8 +79,8 @@ namespace MigrationOps.Core.Tests
         public void UsesTheMostRecentSuccessfulChecksumWhenHistoryHasMultipleRows()
         {
             using var dir = new TempDirectory();
-            const string script = "-- Tags: Db1\nSELECT 1;";
-            dir.WriteFile("20260101-001-Foo.sql", script);
+            const string script = "SELECT 1;";
+            dir.WriteFile("Db1/20260101-001-Foo.sql", script);
             var currentChecksum = ScriptParser.ComputeChecksum(script);
 
             var history = new List<MigrationHistoryRecord>
@@ -96,36 +96,20 @@ namespace MigrationOps.Core.Tests
         }
 
         [Fact]
-        public void SkipsFilesNotTaggedForTheRequestedDatabase()
+        public void OnlyListsFilesUnderTheRequestedDatabasesFolder()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "-- Tags: Db2\nSELECT 1;");
+            dir.WriteFile("Db2/20260101-001-Foo.sql", "SELECT 1;");
 
             Assert.Empty(PlanBuilder.GetMigrationFileStatuses(dir.Path, "Db1", new List<MigrationHistoryRecord>()));
         }
 
         [Fact]
-        public void ReportsValidationErrorWhenFileHasNoTagsHeader()
+        public void ReturnsEmptyWhenTheDatabasesFolderDoesNotExistYet()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "SELECT 1;");
 
-            var status = Assert.Single(PlanBuilder.GetMigrationFileStatuses(dir.Path, "Db1", new List<MigrationHistoryRecord>()));
-
-            Assert.NotNull(status.ValidationError);
-        }
-
-        [Fact]
-        public void TaglessFileIsReportedRegardlessOfWhichDatabaseIsRequested()
-        {
-            using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "SELECT 1;");
-
-            var statusForDb1 = Assert.Single(PlanBuilder.GetMigrationFileStatuses(dir.Path, "Db1", new List<MigrationHistoryRecord>()));
-            var statusForDb2 = Assert.Single(PlanBuilder.GetMigrationFileStatuses(dir.Path, "Db2", new List<MigrationHistoryRecord>()));
-
-            Assert.NotNull(statusForDb1.ValidationError);
-            Assert.NotNull(statusForDb2.ValidationError);
+            Assert.Empty(PlanBuilder.GetMigrationFileStatuses(dir.Path, "Db1", new List<MigrationHistoryRecord>()));
         }
     }
 }

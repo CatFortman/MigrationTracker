@@ -5,11 +5,14 @@
 > while editing a migration versus an unrelated C# file, then DELETE ONE of
 > the two files. Keeping both duplicates these instructions in context.
 
+- Lives under `Migrations/<Database>/`, where `<Database>` exactly matches a
+  key under `Databases` in `Configurations/dbconfig.json` (case matters). The
+  folder is the routing — there is no `-- Tags:` comment. A subfolder name
+  that doesn't match any configured database is a validation error.
 - Filename: `yyyyMMdd-NNN-Description.sql` (zero-padded per-day sequence,
   PascalCase description).
-- Execution order is lexicographic; never backdate or renumber.
-- `-- Tags:` lists target databases; each tag must match a key under
-  `Databases` in `Configurations/dbconfig.json`.
+- Execution order is lexicographic within a database's own subfolder; never
+  backdate or renumber.
 - `GO` separators are supported (one SqlCommand per batch, all inside the
   file's single transaction); use them only where T-SQL needs a new batch.
 - Applied migrations are immutable; edits change the checksum and cause

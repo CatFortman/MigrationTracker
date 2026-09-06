@@ -6,52 +6,6 @@ namespace MigrationOps.Core.MigrationFramework.Scripts
     /// </summary>
     public static class ScriptParser
     {
-        public static List<string> ParseTagsFromFile(string filePath)
-        {
-            var tags = new List<string>();
-            var lines = File.ReadLines(filePath);
-
-            foreach (var line in lines)
-            {
-                if (line.StartsWith("-- Tags:"))
-                {
-                    var tagsLine = line.Split(':')[1].Trim();
-                    tags = tagsLine.Split(',').Select(tag => tag.Trim()).ToList();
-                    break;
-                }
-            }
-
-            if (tags.Count == 0)
-            {
-                throw new InvalidOperationException($"The script {Path.GetFileName(filePath)} does not contain a 'Tags' comment.");
-            }
-
-            return tags;
-        }
-
-        public static bool ShouldApplyScript(List<string> tags, string currentDb)
-        {
-            return tags.Contains(currentDb, StringComparer.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Resolves a script's tags to the database it targets: the first tag that names a
-        /// configured database wins. Tags are database targets, not labels, so a file whose tags
-        /// match nothing configured is an error rather than a no-op.
-        /// </summary>
-        public static string DetermineDatabaseFromTags(List<string> tags, List<string> knownDatabases)
-        {
-            foreach (var tag in tags)
-            {
-                if (knownDatabases.Contains(tag, StringComparer.OrdinalIgnoreCase))
-                {
-                    return tag;
-                }
-            }
-
-            throw new InvalidOperationException("No valid database found in tags.");
-        }
-
         /// <summary>
         /// Computes the script's integrity checksum from its own content instead of trusting a
         /// header written by something else. A leading "-- Checksum:" line (left over from files

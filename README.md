@@ -10,14 +10,13 @@ It combines concepts from Entity Framework migrations and SQL source control too
 - **Content-based Checksums**: Each script's integrity checksum is computed from its own content at apply/plan time — no header to maintain or trust.
 - **Migration Management**: Easily handle database migrations with a structured approach, using timestamped filenames to ensure proper execution order.
 - **`GO` Batch Separators**: Scripts are split on `GO` lines the way SSMS does, so statements that must start their own batch work — while the whole file still applies in one transaction.
-- **Git Integration**: A Git hook ensures every script declares valid database tags.
+- **Folder-per-database routing**: A script's target database is its own subfolder (`Migrations/Db1/`, `Scripts/Db1/...`) — no tagging comment to keep in sync, and a stray folder name that doesn't match a configured database is caught as a validation error instead of silently never running.
 
 ## Installation
 
 ### Prerequisites
 
 - **Git**: Ensure Git is installed on your machine. You can download it from [Git for Windows](https://gitforwindows.org/).
-- **Git Bash**: Git Bash should be installed, as the Git hooks are written in shell script format (`.sh`).
 
 ### Cloning the Repository
 
@@ -27,20 +26,7 @@ To get started, clone the project repository to your local machine:
 git clone <repository-url>
 ```
 
-### Setting Up Git Hooks
-To ensure that our custom Git hooks are correctly set up on your local environment, please follow these steps:
-
-1. Navigate to the root of the repository
-   
-2. Execute the GitHook setup script in PowerShell
-```powershell
-.\setup_hooks.ps1
-```
-
-3. Verify the Hook
-Make a change in the repository, stage it, and attempt to commit. The pre-commit hook should reject the commit if any staged `.sql` file is missing a `-- Tags:` comment.
-
-Checksums are not part of the hook: `ScriptParser.ComputeChecksum` computes each script's SHA-256 from its own content at apply/plan time, so there's nothing to insert, update, or trust from a header.
+Checksums are computed, not stored: `ScriptParser.ComputeChecksum` computes each script's SHA-256 from its own content at apply/plan time, so there's nothing to insert, update, or trust from a header.
 
 ## Usage
 
@@ -99,35 +85,31 @@ Place your SQL scripts into the appropriate folders:
 Ensure that all scripts are written using the CREATE OR ALTER statement to simplify deployment.
 
 ### Organizing Migration Scripts
-Scripts will be applied in the order determined by their filenames.
+Each configured database gets its own subfolder under `Migrations/`, named exactly like its key in `dbconfig.json`'s `Databases` section. Within a database's folder, scripts are applied in order determined by their filenames — by datetime, then script number.
 
-Migrations will be executed in order by datetime, then script number.
-
-Example:
+Example (a `Db1` and a `Db2` database configured in `dbconfig.json`):
 `
-Migrations/20240805-001-CreateNewTestSchema.sql
-Migrations/20240805-002-CreateEntityTable.sql
-Migrations/20240806-001-CreateHappyCustomerTable.sql
-Migrations/20240806-002-CreateCustomerTestTable.sql
+Migrations/Db1/20240805-001-CreateNewTestSchema.sql
+Migrations/Db1/20240805-002-CreateEntityTable.sql
+Migrations/Db1/20240806-001-CreateHappyCustomerTable.sql
+Migrations/Db2/20240806-001-CreateCustomerTestTable.sql
 `
 
 ### Handling Migrations
-Add your migration scripts to the Migrations folder with a filename format that includes a timestamp and a brief description:
+Add your migration scripts to the target database's subfolder under Migrations, with a filename format that includes a timestamp and a brief description:
 
 Example:
 `
-Migrations/20240805-001-CreateEntityTable.sql
+Migrations/Db1/20240805-001-CreateEntityTable.sql
 `
 
 ### Running Migrations
-When you deploy the project, the migration scripts will be applied to the databases in the ``Tags`` comment. Tags should be included as a comment at the top of each SQL script.
-The githook runs validation logic to ensure the ``Tags`` comment is properly added to each sql file.
+When you deploy the project, a script's target database is determined entirely by which subfolder it lives in — there is no tagging comment to keep in sync. A subfolder name that doesn't match any configured database is reported as a validation error (or, for `apply`, makes the run throw and halt) rather than being silently skipped.
 
 Database object scripts are applied before migrations. An object script that fails because it depends on schema a pending migration creates (for example, a view over a table that doesn't exist yet) is deferred and retried automatically after migrations run — so a single deploy works even against a brand-new database. If a script still fails on the retry, the run halts with the script name and nothing further is applied.
 
-Example:
+Example (`Scripts/Db1/StoredProcedures/MyProcedure.sql`):
 ```SQL
--- Tags: db1, staging
 CREATE OR ALTER PROCEDURE dbo.MyProcedure
 AS
 BEGIN
@@ -141,7 +123,6 @@ END
 Scripts may use `GO` batch separators, the same way SSMS and `sqlcmd` do. This is what makes statements that have to start their own batch usable in a migration — `CREATE PROCEDURE`, `CREATE VIEW` and `CREATE TRIGGER`, `SET` options, and DDL that later statements in the same file need to reference:
 
 ```SQL
--- Tags: db1
 CREATE TABLE dbo.Widget (Id INT NOT NULL PRIMARY KEY, Name NVARCHAR(100) NOT NULL);
 GO
 -- A new batch, so the CREATE VIEW is legal and can see the table above.
@@ -184,7 +165,7 @@ dotnet run -- dry-run  [--db <name>]
 ```
 
 - **`apply`** runs the deploy pipeline (object scripts, then migrations, then deferred retries). `--db` limits it to one configured database.
-- **`validate`** previews what a deploy would do without changing anything: each file is reported as already applied, would apply, **CHANGED** (an applied migration whose file was edited — a real run would re-execute it), or a validation error (missing `-- Tags:`, object script without `CREATE OR ALTER`). Validate never halts early; it collects every problem, prints a per-database summary, and ends with `VALIDATE SUCCEEDED`/`VALIDATE FAILED`.
+- **`validate`** previews what a deploy would do without changing anything: each file is reported as already applied, would apply, **CHANGED** (an applied migration whose file was edited — a real run would re-execute it), or a validation error (a stray folder that doesn't match any configured database, or an object script without `CREATE OR ALTER`). Validate never halts early; it collects every problem, prints a per-database summary, and ends with `VALIDATE SUCCEEDED`/`VALIDATE FAILED`.
 - **`dry-run`** runs the same report but additionally executes the pending scripts against the target database in one transaction per database — so later scripts can rely on earlier scripts' schema — and always rolls back. It needs a reachable database but never commits anything, including history rows. It ends with `DRY-RUN SUCCEEDED`/`DRY-RUN FAILED`.
 - The exit code is the success flag: `0` only when there are no CHANGED, validation-error, or dry-run-failed entries, making both `validate` and `dry-run` suitable as CI gates.
 

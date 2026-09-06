@@ -1,4 +1,3 @@
--- Tags: db1
 CREATE OR ALTER TRIGGER dbo.trg_AuditUserChanges
 ON dbo.Users
 AFTER INSERT, UPDATE
