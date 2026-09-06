@@ -1,4 +1,3 @@
--- Tags: db1
 CREATE OR ALTER PROCEDURE dbo.usp_GetUserByEmail
     @Email NVARCHAR(255)
 AS

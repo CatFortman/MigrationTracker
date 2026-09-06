@@ -29,9 +29,22 @@ namespace MigrationOps.Core.MigrationFramework.Services
         public MigrationPlan BuildPlan(string scriptsRootDirectory, string migrationsDirectory, IReadOnlyList<string> targetDatabases)
         {
             var plan = new MigrationPlan { TargetDatabases = targetDatabases.ToList() };
+            var knownDatabases = _config.GetDatabaseNames();
 
-            // Tagless files surface once per classifier call; report each only once.
-            var unresolvedReported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Checked against every configured database, not just this run's targets, so a stray
+            // folder is flagged even under a --db-filtered run.
+            foreach (var stray in ScriptCatalog.FindUnrecognizedDatabaseFolders(scriptsRootDirectory, knownDatabases)
+                         .Concat(ScriptCatalog.FindUnrecognizedDatabaseFolders(migrationsDirectory, knownDatabases))
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                plan.Entries.Add(new Entry
+                {
+                    FileName = $"({stray})",
+                    Database = "(unresolved)",
+                    Status = EntryStatus.ValidationError,
+                    Detail = $"folder '{stray}' does not match any configured database"
+                });
+            }
 
             foreach (var database in targetDatabases)
             {
@@ -59,21 +72,21 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 foreach (var status in GetScriptObjectFileStatuses(scriptsRootDirectory, database, scriptHistory))
                 {
                     AddPlanEntry(plan, status, ScriptKind.DatabaseObject, database,
-                        ScriptCatalog.FindDatabaseObjectFilePath(scriptsRootDirectory, status.FileName), unresolvedReported);
+                        ScriptCatalog.FindDatabaseObjectFilePath(scriptsRootDirectory, database, status.FileName));
                 }
 
                 foreach (var status in GetMigrationFileStatuses(migrationsDirectory, database, migrationHistory))
                 {
                     AddPlanEntry(plan, status, ScriptKind.Migration, database,
-                        Path.Combine(migrationsDirectory, status.FileName), unresolvedReported);
+                        Path.Combine(migrationsDirectory, database, status.FileName));
                 }
             }
 
             return plan;
         }
 
-        // Diffs the migration files targeting `database` against its history to report what's
-        // pending and whether an already-applied file's contents have drifted from what was recorded.
+        // Diffs the migration files under `database`'s own subfolder against its history to report
+        // what's pending and whether an already-applied file's contents have drifted.
         public static List<MigrationFileStatus> GetMigrationFileStatuses(string migrationsDirectory, string database, List<MigrationHistoryRecord> history)
         {
             var statuses = new List<MigrationFileStatus>();
@@ -83,33 +96,9 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 .GroupBy(h => h.MigrationName)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(h => h.AppliedOn).First().Checksum);
 
-            foreach (var file in ScriptCatalog.ListMigrationFiles(migrationsDirectory))
+            foreach (var file in ScriptCatalog.ListMigrationFiles(migrationsDirectory, database))
             {
                 var fileName = Path.GetFileName(file);
-
-                List<string> tags;
-                try
-                {
-                    tags = ScriptParser.ParseTagsFromFile(file);
-                }
-                catch (InvalidOperationException ex)
-                {
-                    // A tagless file can't be matched to any database, so it is reported
-                    // regardless of the filter instead of sinking the whole listing;
-                    // callers running per-database dedupe by filename.
-                    statuses.Add(new MigrationFileStatus
-                    {
-                        FileName = fileName,
-                        ValidationError = ex.Message
-                    });
-                    continue;
-                }
-
-                if (!ScriptParser.ShouldApplyScript(tags, database))
-                {
-                    continue;
-                }
-
                 var currentChecksum = ScriptParser.ComputeChecksum(File.ReadAllText(file));
 
                 var isApplied = history.Any(h => h.Success && h.MigrationName == fileName && h.Checksum == currentChecksum);
@@ -118,7 +107,6 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 statuses.Add(new MigrationFileStatus
                 {
                     FileName = fileName,
-                    Tags = tags,
                     IsApplied = isApplied,
                     HasDrift = hasRecordedChecksum && recordedChecksum != currentChecksum,
                     RecordedChecksum = hasRecordedChecksum ? recordedChecksum : null,
@@ -130,7 +118,8 @@ namespace MigrationOps.Core.MigrationFramework.Services
         }
 
         // Object-script counterpart of GetMigrationFileStatuses: same shape, but enumerates the
-        // four object folders in run order and additionally validates CREATE OR ALTER.
+        // four object folders (under `database`'s own subfolder) in run order and additionally
+        // validates CREATE OR ALTER.
         public static List<MigrationFileStatus> GetScriptObjectFileStatuses(string scriptsRootDirectory, string database, List<ScriptHistoryRecord> history)
         {
             var statuses = new List<MigrationFileStatus>();
@@ -139,30 +128,9 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 .GroupBy(h => h.ScriptName)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(h => h.AppliedOn).First().Checksum);
 
-            foreach (var file in ScriptCatalog.ListDatabaseObjectFiles(scriptsRootDirectory))
+            foreach (var file in ScriptCatalog.ListDatabaseObjectFiles(scriptsRootDirectory, database))
             {
                 var fileName = Path.GetFileName(file);
-
-                List<string> tags;
-                try
-                {
-                    tags = ScriptParser.ParseTagsFromFile(file);
-                }
-                catch (InvalidOperationException ex)
-                {
-                    statuses.Add(new MigrationFileStatus
-                    {
-                        FileName = fileName,
-                        ValidationError = ex.Message
-                    });
-                    continue;
-                }
-
-                if (!ScriptParser.ShouldApplyScript(tags, database))
-                {
-                    continue;
-                }
-
                 var script = File.ReadAllText(file);
                 var currentChecksum = ScriptParser.ComputeChecksum(script);
 
@@ -175,7 +143,6 @@ namespace MigrationOps.Core.MigrationFramework.Services
                     statuses.Add(new MigrationFileStatus
                     {
                         FileName = fileName,
-                        Tags = tags,
                         CurrentChecksum = currentChecksum,
                         ValidationError = ex.Message
                     });
@@ -188,7 +155,6 @@ namespace MigrationOps.Core.MigrationFramework.Services
                 statuses.Add(new MigrationFileStatus
                 {
                     FileName = fileName,
-                    Tags = tags,
                     IsApplied = isApplied,
                     HasDrift = hasRecordedChecksum && recordedChecksum != currentChecksum,
                     RecordedChecksum = hasRecordedChecksum ? recordedChecksum : null,
@@ -201,20 +167,14 @@ namespace MigrationOps.Core.MigrationFramework.Services
 
         // internal (not public) so MigrationOps.Core.Tests can exercise the classification logic
         // directly without widening the plan-building API surface.
-        internal static void AddPlanEntry(MigrationPlan plan, MigrationFileStatus status, ScriptKind kind, string database, string filePath, HashSet<string> unresolvedReported)
+        internal static void AddPlanEntry(MigrationPlan plan, MigrationFileStatus status, ScriptKind kind, string database, string filePath)
         {
-            var unresolved = status.ValidationError != null && status.Tags.Count == 0;
-            if (unresolved && !unresolvedReported.Add(status.FileName))
-            {
-                return;
-            }
-
             var entry = new Entry
             {
                 FileName = status.FileName,
                 FilePath = filePath,
                 Kind = kind,
-                Database = unresolved ? "(unresolved)" : database,
+                Database = database,
                 RecordedChecksum = status.RecordedChecksum,
                 CurrentChecksum = string.IsNullOrEmpty(status.CurrentChecksum) ? null : status.CurrentChecksum
             };

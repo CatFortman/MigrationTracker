@@ -31,27 +31,30 @@ namespace MigrationOps.Core.MigrationFramework.Services
         }
 
         /// <summary>
-        /// Applies database object scripts (functions, views, stored procedures, triggers) from the
-        /// configured script directory. Runs before migrations so that migrations can rely on the
-        /// latest object definitions.
+        /// Applies database object scripts (functions, views, stored procedures, triggers) from
+        /// each target database's own subfolder under the configured script directory. Runs before
+        /// migrations so that migrations can rely on the latest object definitions.
         ///
         /// A script whose SQL fails here (e.g. a view referencing a table a pending migration
-        /// creates) is deferred rather than fatal — the caller retries the returned files with
-        /// <see cref="RetryDeferredScripts"/> after migrations run. Validation failures (missing
-        /// tags, no CREATE OR ALTER) still throw immediately, since a retry cannot fix them.
+        /// creates) is deferred rather than fatal — the caller retries the returned entries with
+        /// <see cref="RetryDeferredScripts"/> after migrations run. Validation failures (no
+        /// CREATE OR ALTER) still throw immediately, since a retry cannot fix them.
         /// </summary>
-        /// <returns>The scripts that failed to apply and should be retried after migrations.</returns>
-        public List<string> ApplyDatabaseObjectScripts(string scriptsRootDirectory, string? onlyDatabase = null)
+        /// <returns>The (file, database) pairs that failed to apply and should be retried after migrations.</returns>
+        public List<(string File, string Database)> ApplyDatabaseObjectScripts(string scriptsRootDirectory, string? onlyDatabase = null)
         {
-            var files = ScriptCatalog.ListDatabaseObjectFiles(scriptsRootDirectory);
+            EnsureNoUnrecognizedDatabaseFolders(scriptsRootDirectory);
 
-            var deferred = new List<string>();
+            var deferred = new List<(string File, string Database)>();
 
-            foreach (var file in files)
+            foreach (var database in TargetDatabases(onlyDatabase))
             {
-                if (!ApplyScriptFile(file, ScriptKind.DatabaseObject, deferSqlFailures: true, onlyDatabase))
+                foreach (var file in ScriptCatalog.ListDatabaseObjectFiles(scriptsRootDirectory, database))
                 {
-                    deferred.Add(file);
+                    if (!ApplyScriptFile(file, ScriptKind.DatabaseObject, database, deferSqlFailures: true))
+                    {
+                        deferred.Add((file, database));
+                    }
                 }
             }
 
@@ -62,34 +65,56 @@ namespace MigrationOps.Core.MigrationFramework.Services
         /// Retries database object scripts deferred by <see cref="ApplyDatabaseObjectScripts"/>.
         /// By this point migrations have run, so any remaining failure is a real error and throws.
         /// </summary>
-        public void RetryDeferredScripts(List<string> deferredFiles, string? onlyDatabase = null)
+        public void RetryDeferredScripts(List<(string File, string Database)> deferredFiles)
         {
-            foreach (var file in deferredFiles)
+            foreach (var (file, database) in deferredFiles)
             {
-                ApplyScriptFile(file, ScriptKind.DatabaseObject, deferSqlFailures: false, onlyDatabase);
+                ApplyScriptFile(file, ScriptKind.DatabaseObject, database, deferSqlFailures: false);
             }
         }
 
         public void ApplyMigrations(string directory, string? onlyDatabase = null)
         {
-            foreach (var file in ScriptCatalog.ListMigrationFiles(directory))
+            EnsureNoUnrecognizedDatabaseFolders(directory);
+
+            foreach (var database in TargetDatabases(onlyDatabase))
             {
-                ApplyScriptFile(file, ScriptKind.Migration, deferSqlFailures: false, onlyDatabase);
+                foreach (var file in ScriptCatalog.ListMigrationFiles(directory, database))
+                {
+                    ApplyScriptFile(file, ScriptKind.Migration, database, deferSqlFailures: false);
+                }
             }
         }
 
-        private bool ApplyScriptFile(string file, ScriptKind kind, bool deferSqlFailures = false, string? onlyDatabase = null)
+        // Every configured database, or just onlyDatabase when a --db filter is active.
+        private IEnumerable<string> TargetDatabases(string? onlyDatabase)
+        {
+            return onlyDatabase != null ? new[] { onlyDatabase } : _config.GetDatabaseNames();
+        }
+
+        // A folder that doesn't match any configured database would otherwise be silently never
+        // discovered, since routing is now purely by folder location. Checked against every
+        // configured database regardless of an active --db filter.
+        private void EnsureNoUnrecognizedDatabaseFolders(string rootDirectory)
+        {
+            var stray = ScriptCatalog.FindUnrecognizedDatabaseFolders(rootDirectory, _config.GetDatabaseNames());
+
+            if (stray.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Folder(s) {string.Join(", ", stray)} under '{rootDirectory}' do not match any configured database.");
+            }
+        }
+
+        private bool ApplyScriptFile(string file, ScriptKind kind, string database, bool deferSqlFailures = false)
         {
             string scriptName = Path.GetFileName(file);
             string kindLabel = kind == ScriptKind.Migration ? "migration" : "database object script";
-
-            List<string> tags;
-            string checksum;
             string script = File.ReadAllText(file);
+            string checksum;
 
             try
             {
-                tags = ScriptParser.ParseTagsFromFile(file);
                 checksum = ScriptParser.ComputeChecksum(script);
 
                 if (kind == ScriptKind.DatabaseObject)
@@ -103,75 +128,51 @@ namespace MigrationOps.Core.MigrationFramework.Services
                     $"Failed to process {kindLabel} '{scriptName}': {ex.Message}", ex);
             }
 
-            foreach (var tag in tags)
+            var connectionString = _config.GetConnectionString(database);
+
+            _historyStore.EnsureHistoryTable(connectionString, kind);
+
+            // Migrations are immutable once applied: HasBeenApplied only matches on
+            // (name, checksum), so an edited file would otherwise look "never applied"
+            // and get re-executed. Object scripts are exempt - re-applying an edited
+            // proc/view is the designed workflow.
+            if (kind == ScriptKind.Migration)
             {
-                // A file tagged only for other databases is skipped silently when a --db
-                // filter is active; the default (null) keeps every call site's behavior.
-                if (onlyDatabase != null && !tag.Equals(onlyDatabase, StringComparison.OrdinalIgnoreCase))
+                var recordedChecksum = _historyStore.GetLatestSuccessfulMigrationChecksum(connectionString, scriptName);
+                var editedError = ScriptParser.DetectEditedMigration(scriptName, recordedChecksum, checksum);
+
+                if (editedError != null)
                 {
-                    continue;
+                    throw new InvalidOperationException(editedError);
                 }
-
-                string currentDb;
-                string connectionString;
-
-                try
-                {
-                    currentDb = ScriptParser.DetermineDatabaseFromTags(new List<string> { tag }, _config.GetDatabaseNames());
-                    connectionString = _config.GetConnectionString(currentDb);
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException(
-                        $"Failed to resolve target database for {kindLabel} '{scriptName}' (tag '{tag}'): {ex.Message}", ex);
-                }
-
-                _historyStore.EnsureHistoryTable(connectionString, kind);
-
-                // Migrations are immutable once applied: HasBeenApplied only matches on
-                // (name, checksum), so an edited file would otherwise look "never applied"
-                // and get re-executed. Object scripts are exempt - re-applying an edited
-                // proc/view is the designed workflow.
-                if (kind == ScriptKind.Migration)
-                {
-                    var recordedChecksum = _historyStore.GetLatestSuccessfulMigrationChecksum(connectionString, scriptName);
-                    var editedError = ScriptParser.DetectEditedMigration(scriptName, recordedChecksum, checksum);
-
-                    if (editedError != null)
-                    {
-                        throw new InvalidOperationException(editedError);
-                    }
-                }
-
-                if (_historyStore.HasBeenApplied(connectionString, scriptName, checksum, kind))
-                {
-                    Console.WriteLine($"Skipping {scriptName} as it has already been applied to {currentDb}");
-                    continue;
-                }
-
-                var result = _gateway.ApplyScript(connectionString, script, scriptName, checksum, kind);
-
-                if (result.Succeeded)
-                {
-                    Console.WriteLine($"Applied {scriptName} to {currentDb} on the specified server");
-                    continue;
-                }
-
-                if (deferSqlFailures)
-                {
-                    Console.WriteLine(
-                        $"Deferring {scriptName} on {currentDb} (will retry after migrations): {result.ErrorMessage}");
-                    return false;
-                }
-
-                ReportFailure(connectionString, scriptName, checksum, currentDb, kind, result.ErrorMessage, result.DurationMs);
-
-                throw new InvalidOperationException(
-                    $"Failed to apply {kindLabel} '{scriptName}' to database '{currentDb}' (rolled back): {result.ErrorMessage}",
-                    result.Error);
             }
 
-            return true;
+            if (_historyStore.HasBeenApplied(connectionString, scriptName, checksum, kind))
+            {
+                Console.WriteLine($"Skipping {scriptName} as it has already been applied to {database}");
+                return true;
+            }
+
+            var result = _gateway.ApplyScript(connectionString, script, scriptName, checksum, kind);
+
+            if (result.Succeeded)
+            {
+                Console.WriteLine($"Applied {scriptName} to {database} on the specified server");
+                return true;
+            }
+
+            if (deferSqlFailures)
+            {
+                Console.WriteLine(
+                    $"Deferring {scriptName} on {database} (will retry after migrations): {result.ErrorMessage}");
+                return false;
+            }
+
+            ReportFailure(connectionString, scriptName, checksum, database, kind, result.ErrorMessage, result.DurationMs);
+
+            throw new InvalidOperationException(
+                $"Failed to apply {kindLabel} '{scriptName}' to database '{database}' (rolled back): {result.ErrorMessage}",
+                result.Error);
         }
 
         /// <summary>

@@ -170,7 +170,7 @@ class Program
         // are deferred and retried after migrations; a retry failure halts the run.
         var deferred = services.Applier.ApplyDatabaseObjectScripts(ScriptDirectory(services), database);
         services.Applier.ApplyMigrations(MigrationDirectory(services), database);
-        services.Applier.RetryDeferredScripts(deferred, database);
+        services.Applier.RetryDeferredScripts(deferred);
         return 0;
     }
 

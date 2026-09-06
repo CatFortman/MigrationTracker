@@ -11,8 +11,6 @@ namespace MigrationOps.Core.Tests
     // edited migration slip through as an ordinary pending apply.
     public class AddPlanEntryTests
     {
-        private static readonly HashSet<string> NoUnresolvedReported = new(StringComparer.OrdinalIgnoreCase);
-
         [Fact]
         public void AlreadyAppliedStatusMapsToAlreadyApplied()
         {
@@ -20,12 +18,11 @@ namespace MigrationOps.Core.Tests
             var status = new MigrationFileStatus
             {
                 FileName = "Foo.sql",
-                Tags = new List<string> { "Db1" },
                 IsApplied = true,
                 CurrentChecksum = "abc"
             };
 
-            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", NoUnresolvedReported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql");
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(EntryStatus.AlreadyApplied, entry.Status);
@@ -40,13 +37,12 @@ namespace MigrationOps.Core.Tests
             var status = new MigrationFileStatus
             {
                 FileName = "Foo.sql",
-                Tags = new List<string> { "Db1" },
                 HasDrift = true,
                 RecordedChecksum = "old",
                 CurrentChecksum = "new"
             };
 
-            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(EntryStatus.Changed, entry.Status);
@@ -63,13 +59,12 @@ namespace MigrationOps.Core.Tests
             var status = new MigrationFileStatus
             {
                 FileName = "Foo.sql",
-                Tags = new List<string> { "Db1" },
                 HasDrift = true,
                 RecordedChecksum = "old",
                 CurrentChecksum = "new"
             };
 
-            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.DatabaseObject, "Db1", filePath, NoUnresolvedReported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.DatabaseObject, "Db1", filePath);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(EntryStatus.WouldApply, entry.Status);
@@ -85,11 +80,10 @@ namespace MigrationOps.Core.Tests
             var status = new MigrationFileStatus
             {
                 FileName = "Foo.sql",
-                Tags = new List<string> { "Db1" },
                 CurrentChecksum = "new"
             };
 
-            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath, NoUnresolvedReported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", filePath);
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(EntryStatus.WouldApply, entry.Status);
@@ -97,18 +91,16 @@ namespace MigrationOps.Core.Tests
         }
 
         [Fact]
-        public void TaglessFileIsReportedOnceAcrossMultipleDatabasesAsUnresolved()
+        public void ObjectScriptValidationErrorMapsToValidationError()
         {
             var plan = new MigrationPlan();
-            var status = new MigrationFileStatus { FileName = "Foo.sql", ValidationError = "no tags" };
-            var reported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var status = new MigrationFileStatus { FileName = "Foo.sql", ValidationError = "missing CREATE OR ALTER" };
 
-            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db1", "Foo.sql", reported);
-            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.Migration, "Db2", "Foo.sql", reported);
+            PlanBuilder.AddPlanEntry(plan, status, ScriptKind.DatabaseObject, "Db1", "Foo.sql");
 
             var entry = Assert.Single(plan.Entries);
             Assert.Equal(EntryStatus.ValidationError, entry.Status);
-            Assert.Equal("(unresolved)", entry.Database);
+            Assert.Equal("Db1", entry.Database);
         }
     }
 }

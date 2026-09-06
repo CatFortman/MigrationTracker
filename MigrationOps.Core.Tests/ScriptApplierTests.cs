@@ -5,8 +5,8 @@ using MigrationOps.Core.Models;
 namespace MigrationOps.Core.Tests
 {
     // The apply pipeline used to be reachable only against a live SQL Server. With the execution
-    // gateway and history store behind interfaces, these drive it end to end in-process: routing
-    // by tag, the immutability guard, defer-and-retry for object scripts, and failure telemetry.
+    // gateway and history store behind interfaces, these drive it end to end in-process: folder
+    // routing, the immutability guard, defer-and-retry for object scripts, and failure telemetry.
     public class ScriptApplierTests
     {
         private readonly TestConfig _config = TestConfig.WithDatabases("Db1", "Db2");
@@ -20,8 +20,8 @@ namespace MigrationOps.Core.Tests
         public void AppliesAPendingMigrationWithTheChecksumComputedFromItsContent()
         {
             using var dir = new TempDirectory();
-            const string script = "-- Tags: Db1\nSELECT 1;";
-            dir.WriteFile("20260101-001-Foo.sql", script);
+            const string script = "SELECT 1;";
+            dir.WriteFile("Db1/20260101-001-Foo.sql", script);
 
             CreateApplier().ApplyMigrations(dir.Path);
 
@@ -36,8 +36,8 @@ namespace MigrationOps.Core.Tests
         public void SkipsAMigrationAlreadyRecordedWithTheSameChecksum()
         {
             using var dir = new TempDirectory();
-            const string script = "-- Tags: Db1\nSELECT 1;";
-            dir.WriteFile("20260101-001-Foo.sql", script);
+            const string script = "SELECT 1;";
+            dir.WriteFile("Db1/20260101-001-Foo.sql", script);
             _history.AppliedRecords.Add(("20260101-001-Foo.sql", ScriptParser.ComputeChecksum(script)));
 
             CreateApplier().ApplyMigrations(dir.Path);
@@ -49,7 +49,7 @@ namespace MigrationOps.Core.Tests
         public void RefusesToReapplyAMigrationEditedAfterItWasApplied()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "-- Tags: Db1\nSELECT 2;");
+            dir.WriteFile("Db1/20260101-001-Foo.sql", "SELECT 2;");
             _history.LatestSuccessfulChecksums["20260101-001-Foo.sql"] = "checksum-of-the-original";
 
             var ex = Assert.Throws<InvalidOperationException>(() => CreateApplier().ApplyMigrations(dir.Path));
@@ -59,21 +59,11 @@ namespace MigrationOps.Core.Tests
         }
 
         [Fact]
-        public void AppliesAMigrationOncePerTaggedDatabase()
-        {
-            using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "-- Tags: Db1, Db2\nSELECT 1;");
-
-            CreateApplier().ApplyMigrations(dir.Path);
-
-            Assert.Equal(new[] { "conn:Db1", "conn:Db2" }, _gateway.Attempts.Select(a => a.ConnectionString));
-        }
-
-        [Fact]
         public void DatabaseFilterAppliesOnlyToTheRequestedDatabase()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "-- Tags: Db1, Db2\nSELECT 1;");
+            dir.WriteFile("Db1/20260101-001-Foo.sql", "SELECT 1;");
+            dir.WriteFile("Db2/20260101-001-Foo.sql", "SELECT 1;");
 
             CreateApplier().ApplyMigrations(dir.Path, onlyDatabase: "Db2");
 
@@ -85,8 +75,8 @@ namespace MigrationOps.Core.Tests
         public void MigrationsRunInFilenameOrder()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("20260101-002-Second.sql", "-- Tags: Db1\nSELECT 2;");
-            dir.WriteFile("20260101-001-First.sql", "-- Tags: Db1\nSELECT 1;");
+            dir.WriteFile("Db1/20260101-002-Second.sql", "SELECT 2;");
+            dir.WriteFile("Db1/20260101-001-First.sql", "SELECT 1;");
 
             CreateApplier().ApplyMigrations(dir.Path);
 
@@ -97,7 +87,7 @@ namespace MigrationOps.Core.Tests
         public void EnsuresTheHistoryTableBeforeTouchingTheDatabase()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "-- Tags: Db1\nSELECT 1;");
+            dir.WriteFile("Db1/20260101-001-Foo.sql", "SELECT 1;");
 
             CreateApplier().ApplyMigrations(dir.Path);
 
@@ -105,25 +95,15 @@ namespace MigrationOps.Core.Tests
         }
 
         [Fact]
-        public void ThrowsWhenATagMatchesNoConfiguredDatabase()
+        public void ThrowsWhenAFolderDoesNotMatchAnyConfiguredDatabase()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "-- Tags: Nope\nSELECT 1;");
+            dir.WriteFile("Db3/20260101-001-Foo.sql", "SELECT 1;");
 
             var ex = Assert.Throws<InvalidOperationException>(() => CreateApplier().ApplyMigrations(dir.Path));
 
-            Assert.Contains("Failed to resolve target database", ex.Message);
-        }
-
-        [Fact]
-        public void ThrowsWhenAMigrationHasNoTagsHeader()
-        {
-            using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "SELECT 1;");
-
-            var ex = Assert.Throws<InvalidOperationException>(() => CreateApplier().ApplyMigrations(dir.Path));
-
-            Assert.Contains("Failed to process migration", ex.Message);
+            Assert.Contains("Db3", ex.Message);
+            Assert.Contains("do not match any configured database", ex.Message);
             Assert.Empty(_gateway.Attempts);
         }
 
@@ -131,7 +111,7 @@ namespace MigrationOps.Core.Tests
         public void FailedMigrationRecordsAFailureRowAlertsOnceAndThrows()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "-- Tags: Db1\nSELECT 1;");
+            dir.WriteFile("Db1/20260101-001-Foo.sql", "SELECT 1;");
             _gateway.FailuresRemaining["20260101-001-Foo.sql"] = 1;
 
             var ex = Assert.Throws<InvalidOperationException>(() => CreateApplier().ApplyMigrations(dir.Path));
@@ -151,7 +131,7 @@ namespace MigrationOps.Core.Tests
         public void TelemetryFailuresDoNotMaskTheOriginalSqlError()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("20260101-001-Foo.sql", "-- Tags: Db1\nSELECT 1;");
+            dir.WriteFile("Db1/20260101-001-Foo.sql", "SELECT 1;");
             _gateway.FailuresRemaining["20260101-001-Foo.sql"] = 1;
             _history.RecordFailureThrows = new InvalidOperationException("history table unreachable");
             _notifier.Throws = new InvalidOperationException("webhook down");
@@ -165,12 +145,14 @@ namespace MigrationOps.Core.Tests
         public void FailedObjectScriptIsDeferredRatherThanFatal()
         {
             using var dir = new TempDirectory();
-            var filePath = dir.WriteFile("Views/Foo.sql", "-- Tags: Db1\nCREATE OR ALTER VIEW dbo.V AS SELECT 1;");
+            var filePath = dir.WriteFile("Db1/Views/Foo.sql", "CREATE OR ALTER VIEW dbo.V AS SELECT 1;");
             _gateway.FailuresRemaining["Foo.sql"] = 1;
 
             var deferred = CreateApplier().ApplyDatabaseObjectScripts(dir.Path);
 
-            Assert.Equal(Path.GetFullPath(filePath), Path.GetFullPath(Assert.Single(deferred)));
+            var (file, database) = Assert.Single(deferred);
+            Assert.Equal(Path.GetFullPath(filePath), Path.GetFullPath(file));
+            Assert.Equal("Db1", database);
             Assert.Empty(_notifier.Alerts);
             Assert.Empty(_history.RecordedFailures);
         }
@@ -179,7 +161,7 @@ namespace MigrationOps.Core.Tests
         public void DeferredObjectScriptSucceedsOnRetryAfterMigrations()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("Views/Foo.sql", "-- Tags: Db1\nCREATE OR ALTER VIEW dbo.V AS SELECT 1;");
+            dir.WriteFile("Db1/Views/Foo.sql", "CREATE OR ALTER VIEW dbo.V AS SELECT 1;");
             _gateway.FailuresRemaining["Foo.sql"] = 1;
 
             var applier = CreateApplier();
@@ -194,7 +176,7 @@ namespace MigrationOps.Core.Tests
         public void ObjectScriptStillFailingOnRetryThrowsAndAlertsWithoutAHistoryRow()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("Views/Foo.sql", "-- Tags: Db1\nCREATE OR ALTER VIEW dbo.V AS SELECT 1;");
+            dir.WriteFile("Db1/Views/Foo.sql", "CREATE OR ALTER VIEW dbo.V AS SELECT 1;");
             _gateway.FailuresRemaining["Foo.sql"] = 2;
 
             var applier = CreateApplier();
@@ -212,7 +194,7 @@ namespace MigrationOps.Core.Tests
         public void ObjectScriptWithoutCreateOrAlterThrowsEvenThoughSqlFailuresAreDeferred()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("Views/Foo.sql", "-- Tags: Db1\nCREATE VIEW dbo.V AS SELECT 1;");
+            dir.WriteFile("Db1/Views/Foo.sql", "CREATE VIEW dbo.V AS SELECT 1;");
 
             var ex = Assert.Throws<InvalidOperationException>(() => CreateApplier().ApplyDatabaseObjectScripts(dir.Path));
 
@@ -224,10 +206,10 @@ namespace MigrationOps.Core.Tests
         public void ObjectScriptsRunInFolderOrderFunctionsViewsProceduresTriggers()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("Triggers/T.sql", "-- Tags: Db1\nCREATE OR ALTER TRIGGER dbo.T ON dbo.X AFTER INSERT AS SELECT 1;");
-            dir.WriteFile("Functions/F.sql", "-- Tags: Db1\nCREATE OR ALTER FUNCTION dbo.F() RETURNS INT AS BEGIN RETURN 1 END;");
-            dir.WriteFile("StoredProcedures/P.sql", "-- Tags: Db1\nCREATE OR ALTER PROCEDURE dbo.P AS SELECT 1;");
-            dir.WriteFile("Views/V.sql", "-- Tags: Db1\nCREATE OR ALTER VIEW dbo.V AS SELECT 1;");
+            dir.WriteFile("Db1/Triggers/T.sql", "CREATE OR ALTER TRIGGER dbo.T ON dbo.X AFTER INSERT AS SELECT 1;");
+            dir.WriteFile("Db1/Functions/F.sql", "CREATE OR ALTER FUNCTION dbo.F() RETURNS INT AS BEGIN RETURN 1 END;");
+            dir.WriteFile("Db1/StoredProcedures/P.sql", "CREATE OR ALTER PROCEDURE dbo.P AS SELECT 1;");
+            dir.WriteFile("Db1/Views/V.sql", "CREATE OR ALTER VIEW dbo.V AS SELECT 1;");
 
             CreateApplier().ApplyDatabaseObjectScripts(dir.Path);
 
@@ -238,7 +220,7 @@ namespace MigrationOps.Core.Tests
         public void AnEditedObjectScriptIsReappliedUnlikeAnEditedMigration()
         {
             using var dir = new TempDirectory();
-            dir.WriteFile("Views/Foo.sql", "-- Tags: Db1\nCREATE OR ALTER VIEW dbo.V AS SELECT 2;");
+            dir.WriteFile("Db1/Views/Foo.sql", "CREATE OR ALTER VIEW dbo.V AS SELECT 2;");
             _history.LatestSuccessfulChecksums["Foo.sql"] = "checksum-of-the-original";
 
             var deferred = CreateApplier().ApplyDatabaseObjectScripts(dir.Path);
